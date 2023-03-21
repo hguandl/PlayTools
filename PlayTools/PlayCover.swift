@@ -16,6 +16,7 @@ public class PlayCover: NSObject {
         AKInterface.initialize()
         PlayInput.shared.initialize()
         DiscordIPC.shared.initialize()
+        MaaTools.shared.initialize()
     }
 
     @objc static public func initMenu(menu: NSObject) {
