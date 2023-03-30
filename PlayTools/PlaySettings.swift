@@ -68,6 +68,8 @@ let settings = PlaySettings.shared
 
     @objc lazy var windowFixMethod = settingsData.windowFixMethod
 
+    lazy var maaTools = settingsData.maaTools
+    lazy var maaToolsPort = settingsData.maaToolsPort
 }
 
 struct AppSettingsData: Codable {
@@ -89,4 +91,7 @@ struct AppSettingsData: Codable {
     var playChainDebugging = false
     var inverseScreenValues = false
     var windowFixMethod = 0
+
+    var maaTools = false
+    var maaToolsPort = 1717
 }

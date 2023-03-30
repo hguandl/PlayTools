@@ -17,6 +17,7 @@ final class MaaTools {
     private let queue = DispatchQueue(label: "MaaTools", qos: .background)
     private var listener: NWListener?
 
+    private var windowTitle: String?
     private var imageBuffer: CVImageBuffer?
     private var tid: Int?
 
@@ -35,6 +36,8 @@ final class MaaTools {
     private let toucherMagic = Data([0x54, 0x55, 0x43, 0x48])
 
     func initialize() {
+        guard PlaySettings.shared.maaTools else { return }
+
         Task(priority: .background) {
             // Wait for window
             while width == 0 || height == 0 {
@@ -42,6 +45,7 @@ final class MaaTools {
                 setupScreenSize()
             }
 
+            windowTitle = AKInterface.shared?.windowTitle
             startServer()
             startCapture()
         }
@@ -59,7 +63,8 @@ final class MaaTools {
     }
 
     private func startServer() {
-        listener = try? NWListener(using: .tcp, on: .init(rawValue: 2333)!)
+        let port = NWEndpoint.Port(rawValue: UInt16(PlaySettings.shared.maaToolsPort & 0xffff)) ?? .any
+        listener = try? NWListener(using: .tcp, on: port)
 
         listener?.newConnectionHandler = { [weak self] newConnection in
             guard let strongSelf = self else { return }
@@ -86,6 +91,7 @@ final class MaaTools {
             case .ready:
                 if let port = self?.listener?.port?.rawValue {
                     self?.logger.log("Server started and listening on port \(port, privacy: .public)")
+                    AKInterface.shared?.windowTitle = "\(self?.windowTitle ?? "") [localhost:\(port)]"
                 }
             case .cancelled:
                 self?.logger.log("Server closed")
