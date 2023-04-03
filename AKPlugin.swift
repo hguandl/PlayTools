@@ -138,13 +138,15 @@ class AKPlugin: NSObject, Plugin {
         NSMenu.setMenuBarVisible(visible)
     }
 
-    var windowTitle: String {
+    var windowTitle: String? {
         get {
-            NSApplication.shared.windows.first!.title
+            NSApplication.shared.windows.first?.title
         }
         set {
-            DispatchQueue.main.async {
-                NSApplication.shared.windows.first!.title = newValue
+            if let newValue {
+                DispatchQueue.main.async {
+                    NSApplication.shared.windows.first?.title = newValue
+                }
             }
         }
     }

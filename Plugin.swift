@@ -29,5 +29,5 @@ public protocol Plugin: NSObjectProtocol {
     func urlForApplicationWithBundleIdentifier(_ value: String) -> URL?
     func setMenuBarVisible(_ value: Bool)
 
-    var windowTitle: String { get set }
+    var windowTitle: String? { get set }
 }

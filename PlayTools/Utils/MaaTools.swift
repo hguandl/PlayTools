@@ -40,18 +40,16 @@ final class MaaTools {
 
         Task(priority: .background) {
             // Wait for window
-            while width == 0 || height == 0 {
+            while width == 0 || height == 0 || windowTitle == nil {
                 try await Task.sleep(nanoseconds: 1_000_000_000)
-                setupScreenSize()
+                setupWindow()
             }
 
-            windowTitle = AKInterface.shared?.windowTitle
             startServer()
-            startCapture()
         }
     }
 
-    private func setupScreenSize() {
+    private func setupWindow() {
         let window = UIApplication.shared.connectedScenes
             .flatMap { ($0 as? UIWindowScene)?.windows ?? [] }
             .first { $0.isKeyWindow }
@@ -60,6 +58,8 @@ final class MaaTools {
             width = Int(bounds.width)
             height = Int(bounds.height)
         }
+
+        windowTitle = AKInterface.shared?.windowTitle
     }
 
     private func startServer() {
@@ -69,20 +69,14 @@ final class MaaTools {
         listener?.newConnectionHandler = { [weak self] newConnection in
             guard let strongSelf = self else { return }
             newConnection.start(queue: strongSelf.queue)
-            newConnection.receive(minimumIncompleteLength: 4, maximumLength: 4) { content, _, _, error in
-                if let error {
+
+            Task {
+                do {
+                    try await strongSelf.handlerTask(on: newConnection).value
+                } catch {
                     strongSelf.logger.error("Receive failed: \(error)")
-                    newConnection.cancelCurrentEndpoint()
-                    return
                 }
-
-                guard let content, content == strongSelf.connectionMagic else {
-                    newConnection.cancelCurrentEndpoint()
-                    return
-                }
-
-                newConnection.send(content: "OKAY".data(using: .ascii), completion: .idempotent)
-                strongSelf.accept(on: newConnection)
+                newConnection.cancel()
             }
         }
 
@@ -105,8 +99,42 @@ final class MaaTools {
         listener?.start(queue: queue)
     }
 
-    private func startCapture() {
-        RPScreenRecorder.shared().startCapture { sampleBuffer, sampleBufferType, error in
+    private func handlerTask(on connection: NWConnection) -> Task<Void, Error> {
+        Task {
+            let (handshake, _, _) = try await connection.receive(minimumIncompleteLength: 4, maximumLength: 4)
+            guard handshake == connectionMagic else {
+                throw MaaToolsError.invalidMessage
+            }
+            try await startCapture()
+            connection.send(content: "OKAY".data(using: .ascii), completion: .idempotent)
+
+            for try await payload in readPayload(from: connection) {
+                guard RPScreenRecorder.shared().isRecording else {
+                    throw MaaToolsError.recorderStopped
+                }
+
+                switch payload.prefix(4) {
+                case screencapMagic:
+                    screencap(to: connection)
+                case sizeMagic:
+                    screensize(to: connection)
+                case terminateMagic:
+                    AKInterface.shared?.terminateApplication()
+                case toucherMagic:
+                    toucherDispatch(payload, on: connection)
+                default:
+                    break
+                }
+            }
+        }
+    }
+
+    private func startCapture() async throws {
+        guard !RPScreenRecorder.shared().isRecording else {
+            return
+        }
+
+        try await RPScreenRecorder.shared().startCapture { sampleBuffer, sampleBufferType, error in
             if let error {
                 self.logger.error("Capture error: \(error)")
                 return
@@ -122,62 +150,41 @@ final class MaaTools {
             }
 
             self.imageBuffer = sampleBuffer.imageBuffer
-        } completionHandler: { error in
-            if let error {
-                self.logger.error("Start Capture Error: \(error)")
-            } else {
-                self.logger.log("Capture started.")
+        }
+
+        while imageBuffer == nil {
+            try await Task.sleep(nanoseconds: 500_000)
+        }
+    }
+
+    // swiftlint:disable line_length
+
+    private func readPayload(from connection: NWConnection) -> AsyncThrowingStream<Data, Error> {
+        AsyncThrowingStream { continuation in
+            let receiver = Task {
+                while true {
+                    do {
+                        try Task.checkCancellation()
+                        let (header, _, _) = try await connection.receive(minimumIncompleteLength: 2, maximumLength: 2)
+                        let length = Int(header[0]) * 256 + Int(header[1])
+
+                        try Task.checkCancellation()
+                        let (payload, _, _) = try await connection.receive(minimumIncompleteLength: length, maximumLength: length)
+                        continuation.yield(payload)
+                    } catch {
+                        continuation.finish(throwing: error)
+                        break
+                    }
+                }
+            }
+
+            continuation.onTermination = { _ in
+                receiver.cancel()
             }
         }
     }
 
-    private func accept(on connection: NWConnection) {
-        connection.receive(minimumIncompleteLength: 2, maximumLength: 2) { content, _, _, error in
-            if let error {
-                self.logger.error("Receive failed: \(error)")
-                connection.cancelCurrentEndpoint()
-                return
-            }
-
-            guard let content, content.count == 2 else {
-                connection.cancelCurrentEndpoint()
-                return
-            }
-
-            let length = Int(content[0]) * 256 + Int(content[1])
-            self.dispatch(length, on: connection)
-        }
-    }
-
-    private func dispatch(_ length: Int, on connection: NWConnection) {
-        connection.receive(minimumIncompleteLength: length, maximumLength: length) { content, _, _, error in
-            if let error {
-                self.logger.error("Receive failed: \(error)")
-                connection.cancelCurrentEndpoint()
-                return
-            }
-
-            guard let content, content.count == length else {
-                connection.cancelCurrentEndpoint()
-                return
-            }
-
-            switch content.prefix(4) {
-            case self.screencapMagic:
-                self.screencap(to: connection)
-            case self.sizeMagic:
-                self.screensize(to: connection)
-            case self.terminateMagic:
-                AKInterface.shared?.terminateApplication()
-            case self.toucherMagic:
-                self.toucherDispatch(content, on: connection)
-            default:
-                break
-            }
-
-            self.accept(on: connection)
-        }
-    }
+    // swiftlint:enable line_length
 
     private func screencap(to connection: NWConnection) {
         let data = screenshot() ?? Data()
@@ -269,3 +276,33 @@ final class MaaTools {
         Toucher.touchcam(point: .init(x: atX, y: atY), phase: .ended, tid: &tid)
     }
 }
+
+private enum MaaToolsError: Error {
+    case emptyContent
+    case invalidMessage
+    case recorderStopped
+}
+
+// swiftlint:disable large_tuple line_length
+
+private extension NWConnection {
+    func receive(minimumIncompleteLength: Int, maximumLength: Int) async throws -> (Data, NWConnection.ContentContext, Bool) {
+        try await withCheckedThrowingContinuation { continuation in
+            receive(minimumIncompleteLength: minimumIncompleteLength, maximumLength: maximumLength) { content, contentContext, isComplete, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                guard let content, let contentContext else {
+                    continuation.resume(throwing: MaaToolsError.emptyContent)
+                    return
+                }
+
+                continuation.resume(returning: (content, contentContext, isComplete))
+            }
+        }
+    }
+}
+
+// swiftlint:enable large_tuple line_length
