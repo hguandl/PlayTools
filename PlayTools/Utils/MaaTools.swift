@@ -106,7 +106,7 @@ final class MaaTools {
                 throw MaaToolsError.invalidMessage
             }
             try await startCapture()
-            connection.send(content: "OKAY".data(using: .ascii), completion: .idempotent)
+            try await connection.send(content: "OKAY".data(using: .ascii))
 
             for try await payload in readPayload(from: connection) {
                 guard RPScreenRecorder.shared().isRecording else {
@@ -115,9 +115,9 @@ final class MaaTools {
 
                 switch payload.prefix(4) {
                 case screencapMagic:
-                    screencap(to: connection)
+                    try await screencap(to: connection)
                 case sizeMagic:
-                    screensize(to: connection)
+                    try await screensize(to: connection)
                 case terminateMagic:
                     AKInterface.shared?.terminateApplication()
                 case toucherMagic:
@@ -186,15 +186,14 @@ final class MaaTools {
 
     // swiftlint:enable line_length
 
-    private func screencap(to connection: NWConnection) {
+    private func screencap(to connection: NWConnection) async throws {
         let data = screenshot() ?? Data()
         let length = [UInt8(data.count >> 24 & 0xff),
                       UInt8(data.count >> 16 & 0xff),
                       UInt8(data.count >> 8 & 0xff),
                       UInt8(data.count & 0xff)]
 
-        connection.send(content: Data(length), completion: .idempotent)
-        connection.send(content: data, completion: .idempotent)
+        try await connection.send(content: Data(length) + data)
     }
 
     private func screenshot() -> Data? {
@@ -233,13 +232,13 @@ final class MaaTools {
         return data
     }
 
-    private func screensize(to connection: NWConnection) {
+    private func screensize(to connection: NWConnection) async throws {
         let bytes = [UInt8(width >> 8 & 0xff),
                      UInt8(width & 0xff),
                      UInt8(height >> 8 & 0xff),
                      UInt8(height & 0xff)]
 
-        connection.send(content: Data(bytes), completion: .idempotent)
+        try await connection.send(content: Data(bytes))
     }
 
     private func toucherDispatch(_ content: Data, on connection: NWConnection) {
@@ -301,6 +300,18 @@ private extension NWConnection {
 
                 continuation.resume(returning: (content, contentContext, isComplete))
             }
+        }
+    }
+
+    func send(content: Data?, contentContext: NWConnection.ContentContext = .defaultMessage, isComplete: Bool = true) async throws {
+        return try await withCheckedThrowingContinuation { continuation in
+            send(content: content, contentContext: contentContext, isComplete: isComplete, completion: .contentProcessed { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: ())
+                }
+            })
         }
     }
 }
