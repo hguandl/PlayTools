@@ -10,6 +10,8 @@ import OSLog
 import ReplayKit
 import VideoToolbox
 
+private let MAA_TOOLS_VERSION = 1
+
 final class MaaTools {
     public static let shared = MaaTools()
 
@@ -34,6 +36,8 @@ final class MaaTools {
     private let terminateMagic = Data([0x54, 0x45, 0x52, 0x4d])
     // ['T', 'U', 'C', 'H']
     private let toucherMagic = Data([0x54, 0x55, 0x43, 0x48])
+    // ['V', 'E', 'R', 'N']
+    private let versionMagic = Data([0x56, 0x45, 0x52, 0x4e])
 
     func initialize() {
         guard PlaySettings.shared.maaTools else { return }
@@ -122,6 +126,8 @@ final class MaaTools {
                     AKInterface.shared?.terminateApplication()
                 case toucherMagic:
                     toucherDispatch(payload, on: connection)
+                case versionMagic:
+                    try await version(to: connection)
                 default:
                     break
                 }
@@ -166,7 +172,7 @@ final class MaaTools {
                     do {
                         try Task.checkCancellation()
                         let (header, _, _) = try await connection.receive(minimumIncompleteLength: 2, maximumLength: 2)
-                        let length = Int(header[0]) * 256 + Int(header[1])
+                        let length = header.u16(at: 0)
 
                         try Task.checkCancellation()
                         let (payload, _, _) = try await connection.receive(minimumIncompleteLength: length, maximumLength: length)
@@ -188,12 +194,7 @@ final class MaaTools {
 
     private func screencap(to connection: NWConnection) async throws {
         let data = screenshot() ?? Data()
-        let length = [UInt8(data.count >> 24 & 0xff),
-                      UInt8(data.count >> 16 & 0xff),
-                      UInt8(data.count >> 8 & 0xff),
-                      UInt8(data.count & 0xff)]
-
-        try await connection.send(content: Data(length) + data)
+        try await connection.send(content: data.count.u32Bytes + data)
     }
 
     private func screenshot() -> Data? {
@@ -222,9 +223,10 @@ final class MaaTools {
         let bytesPerRow = 4 * width
         let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: length)
         let bitmapInfo = CGImageAlphaInfo.noneSkipLast.rawValue | CGBitmapInfo.byteOrderDefault.rawValue
+        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
         let context = CGContext(data: buffer, width: width, height: height,
                                 bitsPerComponent: 8, bytesPerRow: bytesPerRow,
-                                space: image.colorSpace!, bitmapInfo: bitmapInfo)
+                                space: colorSpace, bitmapInfo: bitmapInfo)
         context?.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
 
         let data = Data(bytesNoCopy: buffer, count: length, deallocator: .free)
@@ -233,23 +235,14 @@ final class MaaTools {
     }
 
     private func screensize(to connection: NWConnection) async throws {
-        let bytes = [UInt8(width >> 8 & 0xff),
-                     UInt8(width & 0xff),
-                     UInt8(height >> 8 & 0xff),
-                     UInt8(height & 0xff)]
-
-        try await connection.send(content: Data(bytes))
+        try await connection.send(content: width.u16Bytes + height.u16Bytes)
     }
 
     private func toucherDispatch(_ content: Data, on connection: NWConnection) {
         let touchPhase = content[4]
 
-        let parseInt16 = { (data: Data, offset: Int) in
-            Int(data[offset]) * 256 + Int(data[offset + 1])
-        }
-
-        let pointX = parseInt16(content, 5)
-        let pointY = parseInt16(content, 7)
+        let pointX = content.u16(at: 5)
+        let pointY = content.u16(at: 7)
 
         switch touchPhase {
         case 0:
@@ -274,12 +267,35 @@ final class MaaTools {
     private func toucherUp(atX: Int, atY: Int) {
         Toucher.touchcam(point: .init(x: atX, y: atY), phase: .ended, tid: &tid)
     }
+
+    private func version(to connection: NWConnection) async throws {
+        try await connection.send(content: MAA_TOOLS_VERSION.u32Bytes)
+    }
 }
 
 private enum MaaToolsError: Error {
     case emptyContent
     case invalidMessage
     case recorderStopped
+}
+
+private extension Int {
+    var u16Bytes: Data {
+        let bytes = [UInt8(self >> 8 & 0xff), UInt8(self & 0xff)]
+        return Data(bytes)
+    }
+
+    var u32Bytes: Data {
+        let bytes = [UInt8(self >> 24 & 0xff), UInt8(self >> 16 & 0xff), UInt8(self >> 8 & 0xff), UInt8(self & 0xff)]
+        return Data(bytes)
+    }
+}
+
+private extension Data {
+    func u16(at offset: Int) -> Int {
+        guard offset < count - 1 else { return 0 }
+        return Int(self[offset]) * 256 + Int(self[offset + 1])
+    }
 }
 
 // swiftlint:disable large_tuple line_length
