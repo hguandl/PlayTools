@@ -211,7 +211,7 @@ final class MaaTools {
         }
 
         // Crop the title bar
-        let titleBarHeight = image.height - (image.width / 16 * 9)
+        let titleBarHeight = image.height - image.width * height / width
         let contentRect = CGRect(x: 0, y: titleBarHeight, width: image.width,
                                  height: image.height - titleBarHeight)
         guard let image = image.cropping(to: contentRect) else {
