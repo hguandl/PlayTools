@@ -68,6 +68,8 @@ let settings = PlaySettings.shared
 
     @objc lazy var windowFixMethod = settingsData.windowFixMethod
 
+    @objc lazy var customScaler = settingsData.customScaler
+
     lazy var maaTools = settingsData.maaTools
     lazy var maaToolsPort = settingsData.maaToolsPort
 }
@@ -81,6 +83,7 @@ struct AppSettingsData: Codable {
     var iosDeviceModel = "iPad13,8"
     var windowWidth = 1920
     var windowHeight = 1080
+    var customScaler = 2.0
     var resolution = 2
     var aspectRatio = 1
     var notch = false
