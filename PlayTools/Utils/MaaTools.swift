@@ -8,7 +8,7 @@
 import Network
 import OSLog
 
-private let MAA_TOOLS_VERSION = 1
+private let MAA_TOOLS_VERSION = 2
 
 final class MaaTools {
     public static let shared = MaaTools()
