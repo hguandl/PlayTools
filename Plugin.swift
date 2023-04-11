@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import CoreGraphics
 
 @objc(Plugin)
 public protocol Plugin: NSObjectProtocol {
@@ -30,4 +31,5 @@ public protocol Plugin: NSObjectProtocol {
     func setMenuBarVisible(_ value: Bool)
 
     var windowTitle: String? { get set }
+    var windowImage: CGImage? { get }
 }

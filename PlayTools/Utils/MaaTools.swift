@@ -7,8 +7,6 @@
 
 import Network
 import OSLog
-import ReplayKit
-import VideoToolbox
 
 private let MAA_TOOLS_VERSION = 1
 
@@ -20,7 +18,6 @@ final class MaaTools {
     private var listener: NWListener?
 
     private var windowTitle: String?
-    private var imageBuffer: CVImageBuffer?
     private var tid: Int?
 
     private var width = 0
@@ -109,14 +106,9 @@ final class MaaTools {
             guard handshake == connectionMagic else {
                 throw MaaToolsError.invalidMessage
             }
-            try await startCapture()
             try await connection.send(content: "OKAY".data(using: .ascii))
 
             for try await payload in readPayload(from: connection) {
-                guard RPScreenRecorder.shared().isRecording else {
-                    throw MaaToolsError.recorderStopped
-                }
-
                 switch payload.prefix(4) {
                 case screencapMagic:
                     try await screencap(to: connection)
@@ -132,34 +124,6 @@ final class MaaTools {
                     break
                 }
             }
-        }
-    }
-
-    private func startCapture() async throws {
-        guard !RPScreenRecorder.shared().isRecording else {
-            return
-        }
-
-        try await RPScreenRecorder.shared().startCapture { sampleBuffer, sampleBufferType, error in
-            if let error {
-                self.logger.error("Capture error: \(error)")
-                return
-            }
-
-            guard sampleBuffer.isValid else {
-                self.logger.error("Sample not valid")
-                return
-            }
-
-            guard sampleBufferType == .video else {
-                return
-            }
-
-            self.imageBuffer = sampleBuffer.imageBuffer
-        }
-
-        while imageBuffer == nil {
-            try await Task.sleep(nanoseconds: 500_000)
         }
     }
 
@@ -198,15 +162,8 @@ final class MaaTools {
     }
 
     private func screenshot() -> Data? {
-        guard let imageBuffer else {
-            logger.error("No image buffer")
-            return nil
-        }
-
-        var image: CGImage?
-        let result = VTCreateCGImageFromCVPixelBuffer(imageBuffer, options: nil, imageOut: &image)
-        guard result == noErr, let image else {
-            logger.error("Failed to create CGImage")
+        guard let image = AKInterface.shared?.windowImage else {
+            logger.error("Failed to fetch CGImage")
             return nil
         }
 
@@ -276,7 +233,6 @@ final class MaaTools {
 private enum MaaToolsError: Error {
     case emptyContent
     case invalidMessage
-    case recorderStopped
 }
 
 private extension Int {

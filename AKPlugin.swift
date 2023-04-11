@@ -150,4 +150,11 @@ class AKPlugin: NSObject, Plugin {
             }
         }
     }
+
+    var windowImage: CGImage? {
+        guard let windowID = NSApplication.shared.windows.first?.windowNumber else {
+            return nil
+        }
+        return CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(windowID), .boundsIgnoreFraming)
+    }
 }
