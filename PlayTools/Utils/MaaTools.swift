@@ -90,7 +90,7 @@ final class MaaTools {
                 }
             case .cancelled:
                 self?.logger.log("Server closed")
-            case .failed(let error):
+            case let .failed(error):
                 self?.logger.error("Server failed to start: \(error)")
             default:
                 break
@@ -195,7 +195,7 @@ final class MaaTools {
         try await connection.send(content: width.u16Bytes + height.u16Bytes)
     }
 
-    private func toucherDispatch(_ content: Data, on connection: NWConnection) {
+    private func toucherDispatch(_ content: Data, on _: NWConnection) {
         let touchPhase = content[4]
 
         let pointX = content.u16(at: 5)
@@ -208,6 +208,7 @@ final class MaaTools {
             toucherMove(atX: pointX, atY: pointY)
         case 3:
             toucherUp(atX: pointX, atY: pointY)
+            Toucher.keyView = nil
         default:
             break
         }
