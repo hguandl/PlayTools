@@ -51,6 +51,26 @@ extension UIApplication {
         Toucher.writeLog(logMessage: "mark")
         Toast.showHint(title: "Log marked")
     }
+
+    @objc
+    func rotateView(_ sender: AnyObject) {
+        for scene in connectedScenes {
+            guard let windowScene = scene as? UIWindowScene else { continue }
+            for window in windowScene.windows {
+                guard let rootViewController = window.rootViewController else { continue }
+                rootViewController.rotateView(sender)
+            }
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: DispatchTime.now() + 2, execute: {
+            Toast.showHint(title: "Rotated")
+        })
+    }
+
+    @objc
+    func toggleDebugOverlay(_ sender: AnyObject) {
+        DebugController.instance.toggleDebugOverlay()
+    }
 }
 
 extension UIViewController {
@@ -79,13 +99,16 @@ var keymapping = [
     NSLocalizedString("menu.keymapping.downsizeElement", tableName: "Playtools",
                       value: "Downsize selected element", comment: ""),
     NSLocalizedString("menu.keymapping.rotateDisplay", tableName: "Playtools",
-                      value: "Rotate display area", comment: "")
+                      value: "Rotate display area", comment: ""),
+    NSLocalizedString("menu.keymapping.toggleDebug", tableName: "Playtools",
+                      value: "Toggle Debug Overlay", comment: ""),
   ]
 var keymappingSelectors = [#selector(UIApplication.switchEditorMode(_:)),
                            #selector(UIApplication.removeElement(_:)),
                            #selector(UIApplication.upscaleElement(_:)),
                            #selector(UIApplication.downscaleElement(_:)),
-                           #selector(UIViewController.rotateView(_:))
+                           #selector(UIApplication.rotateView(_:)),
+                           #selector(UIApplication.toggleDebugOverlay(_:))
     ]
 
 class MenuController {
@@ -127,7 +150,7 @@ class MenuController {
 
     class func keymappingMenu() -> UIMenu {
         let keyCommands = [ "K", UIKeyCommand.inputDelete,
-                            UIKeyCommand.inputUpArrow, UIKeyCommand.inputDownArrow, "R", "L"]
+                            UIKeyCommand.inputUpArrow, UIKeyCommand.inputDownArrow, "R", "D"]
         let arrowKeyChildrenCommands = zip(keyCommands, keymapping).map { (command, btn) in
             UIKeyCommand(title: btn,
                          image: nil,

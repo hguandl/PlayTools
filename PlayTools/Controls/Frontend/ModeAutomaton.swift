@@ -32,6 +32,10 @@ public class ModeAutomaton {
     }
 
     static public func onCmdK() {
+        guard settings.keymapping else {
+            return
+        }
+
         EditorController.shared.switchMode()
 
         if mode == .EDITOR && !EditorController.shared.editorMode {
@@ -44,14 +48,14 @@ public class ModeAutomaton {
         }
     }
 
-    static public func onKeyboardShow() {
+    static public func onUITextInputBeginEdit() {
         if mode == .EDITOR {
             return
         }
         mode.set(.TEXT_INPUT)
     }
 
-    static public func onKeyboardHide() {
+    static public func onUITextInputEndEdit() {
         if mode == .EDITOR {
             return
         }

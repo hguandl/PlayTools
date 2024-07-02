@@ -34,13 +34,21 @@ public class ControlMode: Equatable {
         let centre = NotificationCenter.default
         let main = OperationQueue.main
         if PlaySettings.shared.noKMOnInput {
-            centre.addObserver(forName: UIApplication.keyboardDidHideNotification, object: nil, queue: main) { _ in
-                ModeAutomaton.onKeyboardHide()
-                Toucher.writeLog(logMessage: "virtual keyboard did hide")
+            centre.addObserver(forName: UITextField.textDidEndEditingNotification, object: nil, queue: main) { _ in
+                ModeAutomaton.onUITextInputEndEdit()
+                Toucher.writeLog(logMessage: "uitextinput end edit")
             }
-            centre.addObserver(forName: UIApplication.keyboardWillShowNotification, object: nil, queue: main) { _ in
-                ModeAutomaton.onKeyboardShow()
-                Toucher.writeLog(logMessage: "virtual keyboard will show")
+            centre.addObserver(forName: UITextField.textDidBeginEditingNotification, object: nil, queue: main) { _ in
+                ModeAutomaton.onUITextInputBeginEdit()
+                Toucher.writeLog(logMessage: "uitextinput begin edit")
+            }
+            centre.addObserver(forName: UITextView.textDidEndEditingNotification, object: nil, queue: main) { _ in
+                ModeAutomaton.onUITextInputEndEdit()
+                Toucher.writeLog(logMessage: "uitextinput end edit")
+            }
+            centre.addObserver(forName: UITextView.textDidBeginEditingNotification, object: nil, queue: main) { _ in
+                ModeAutomaton.onUITextInputBeginEdit()
+                Toucher.writeLog(logMessage: "uitextinput begin edit")
             }
             set(.ARBITRARY_CLICK)
         } else {
@@ -53,17 +61,19 @@ public class ControlMode: Equatable {
             }
         }
 
-        AKInterface.shared!.setupKeyboard(keyboard: { keycode, pressed, isRepeat in
-            self.keyboardAdapter.handleKey(keycode: keycode, pressed: pressed, isRepeat: isRepeat)},
+        AKInterface.shared!.setupKeyboard(keyboard: { keycode, pressed, isRepeat, ctrlModified in
+            self.keyboardAdapter.handleKey(keycode: keycode, pressed: pressed,
+                                           isRepeat: isRepeat, ctrlModified: ctrlModified)},
           swapMode: ModeAutomaton.onOption)
 
-        AKInterface.shared!.setupScrollWheel({deltaX, deltaY in
-            self.mouseAdapter.handleScrollWheel(deltaX: deltaX, deltaY: deltaY)
-        })
+        if PlaySettings.shared.enableScrollWheel {
+            AKInterface.shared!.setupScrollWheel({deltaX, deltaY in
+                self.mouseAdapter.handleScrollWheel(deltaX: deltaX, deltaY: deltaY)
+            })
+        }
 
-        AKInterface.shared!.setupMouseMoved({deltaX, deltaY in
-            self.mouseAdapter.handleMove(deltaX: deltaX, deltaY: deltaY)
-        })
+        // Mouse polling rate as high as 1000 causes issue to some games
+        setupMouseMoved(maxPollingRate: 125)
 
         AKInterface.shared!.setupMouseButton(left: true, right: false, {_, pressed in
             self.mouseAdapter.handleLeftButton(pressed: pressed)
@@ -80,6 +90,31 @@ public class ControlMode: Equatable {
         ActionDispatcher.build()
     }
 
+    private func setupMouseMoved(maxPollingRate: Int) {
+        let minMoveInterval =
+            DispatchTimeInterval.milliseconds(1000/maxPollingRate)
+        var lastMoveWhen = DispatchTime.now()
+        // Repeat the return value of last processed event
+        var consumed = true
+        var movement: CGVector = CGVector()
+
+        AKInterface.shared!.setupMouseMoved({deltaX, deltaY in
+            // limit move frequency
+            let now = DispatchTime.now()
+            movement.dy += deltaY
+            movement.dx += deltaX
+            if now < lastMoveWhen.advanced(by: minMoveInterval) {
+                return consumed
+            }
+
+            lastMoveWhen = now
+            consumed = self.mouseAdapter.handleMove(deltaX: movement.dx, deltaY: movement.dy)
+            movement.dy = 0
+            movement.dx = 0
+            return consumed
+        })
+    }
+
     public func set(_ mode: ControlModeLiteral) {
         let wasHidden = mouseAdapter?.cursorHidden() ?? false
         let first = mouseAdapter == nil
@@ -91,18 +126,33 @@ public class ControlMode: Equatable {
 //            Toast.showHint(title: "should hide cursor? \(mouseAdapter.cursorHidden())",
 //                       text: ["current state: " + mode])
         }
-        if mouseAdapter.cursorHidden() != wasHidden {
+        if mouseAdapter.cursorHidden() != wasHidden && settings.keymapping {
             if wasHidden {
                 NotificationCenter.default.post(name: NSNotification.Name.playtoolsCursorWillShow,
                                                 object: nil, userInfo: [:])
                 if screen.fullscreen {
                     screen.switchDock(true)
                 }
+
+                if mode == .OFF || mode == .EDITOR {
+                    ActionDispatcher.invalidateActions()
+                } else {
+                    // In case any touch point failed to release
+                    // (might because of system glitch)
+                    // Work around random zoom in zoom out
+                    ActionDispatcher.invalidateNonButtonActions()
+                }
+
                 AKInterface.shared!.unhideCursor()
             } else {
                 NotificationCenter.default.post(name: NSNotification.Name.playtoolsCursorWillHide,
                                                 object: nil, userInfo: [:])
                 AKInterface.shared!.hideCursor()
+
+                // Fix when people hold fake mouse while pressing option
+                // and it becomes random zoom in zoom out
+                ActionDispatcher.invalidateNonButtonActions()
+
                 if screen.fullscreen {
                     screen.switchDock(false)
                 }
