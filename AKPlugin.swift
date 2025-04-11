@@ -181,4 +181,24 @@ class AKPlugin: NSObject, Plugin {
     func setMenuBarVisible(_ visible: Bool) {
         NSMenu.setMenuBarVisible(visible)
     }
+
+    var windowTitle: String? {
+        get {
+            NSApplication.shared.windows.first?.title
+        }
+        set {
+            if let newValue {
+                DispatchQueue.main.async {
+                    NSApplication.shared.windows.first?.title = newValue
+                }
+            }
+        }
+    }
+
+    var windowImage: CGImage? {
+        guard let windowID = NSApplication.shared.windows.first?.windowNumber else {
+            return nil
+        }
+        return CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(windowID), .boundsIgnoreFraming)
+    }
 }

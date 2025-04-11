@@ -79,6 +79,10 @@ let settings = PlaySettings.shared
     @objc lazy var noKMOnInput = settingsData.noKMOnInput
 
     @objc lazy var enableScrollWheel = settingsData.enableScrollWheel
+
+    @objc lazy var maaTools = settingsData.maaTools
+
+    @objc lazy var maaToolsPort = settingsData.maaToolsPort
 }
 
 struct AppSettingsData: Codable {
@@ -100,6 +104,8 @@ struct AppSettingsData: Codable {
     var playChainDebugging = false
     var inverseScreenValues = false
     var windowFixMethod = 0
+    var maaTools = false
+    var maaToolsPort = 1717
     var rootWorkDir = true
     var noKMOnInput = false
     var enableScrollWheel = true

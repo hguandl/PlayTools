@@ -16,6 +16,7 @@ public class PlayCover: NSObject {
         AKInterface.initialize()
         PlayInput.shared.initialize()
         DiscordIPC.shared.initialize()
+        MaaTools.shared.initialize()
 
         if PlaySettings.shared.rootWorkDir {
             // Change the working directory to / just like iOS
