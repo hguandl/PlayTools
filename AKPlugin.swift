@@ -96,6 +96,26 @@ class AKPlugin: NSObject, Plugin {
         NSApplication.shared.windows.first!.styleMask.contains(.fullScreen)
     }
 
+    var windowTitle: String? {
+        get {
+            NSApplication.shared.windows.first?.title
+        }
+        set {
+            if let newValue {
+                DispatchQueue.main.async {
+                    NSApplication.shared.windows.first?.title = newValue
+                }
+            }
+        }
+    }
+
+    var windowImage: CGImage? {
+        guard let windowID = NSApplication.shared.windows.first?.windowNumber else {
+            return nil
+        }
+        return CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(windowID), [.bestResolution, .boundsIgnoreFraming])
+    }
+
     var cmdPressed: Bool = false
     var cursorHideLevel = 0
     func hideCursor() {
