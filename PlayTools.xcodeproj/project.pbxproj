@@ -14,6 +14,7 @@
 		6E7663A528D0FEBE00DE4AF9 /* AKPluginLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E7663A428D0FEBE00DE4AF9 /* AKPluginLoader.swift */; };
 		6E84A14528D0F94E00BF7495 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA818CBA287ABFD5000BEE9D /* UIKit.framework */; };
 		6E84A15028D0F97500BF7495 /* AKInterface.bundle in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 6E84A14C28D0F96D00BF7495 /* AKInterface.bundle */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		83B1FB7129C9AB94003BBBD4 /* MaaTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83B1FB7029C9AB94003BBBD4 /* MaaTools.swift */; };
 		951D8275299D097C00D35B20 /* Playtools.strings in Resources */ = {isa = PBXBuildFile; fileRef = 951D8277299D097C00D35B20 /* Playtools.strings */; };
 		954389C22B38922400B063BB /* MouseArea.swift in Sources */ = {isa = PBXBuildFile; fileRef = 954389C12B38922400B063BB /* MouseArea.swift */; };
 		954389C42B38968C00B063BB /* Joystick.swift in Sources */ = {isa = PBXBuildFile; fileRef = 954389C32B38968C00B063BB /* Joystick.swift */; };
@@ -108,6 +109,7 @@
 		6E7663A028D0FB5300DE4AF9 /* AKPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AKPlugin.swift; sourceTree = "<group>"; };
 		6E7663A428D0FEBE00DE4AF9 /* AKPluginLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AKPluginLoader.swift; sourceTree = "<group>"; };
 		6E84A14C28D0F96D00BF7495 /* AKInterface.bundle */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AKInterface.bundle; sourceTree = BUILT_PRODUCTS_DIR; };
+		83B1FB7029C9AB94003BBBD4 /* MaaTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaaTools.swift; sourceTree = "<group>"; };
 		951D8276299D097C00D35B20 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Playtools.strings; sourceTree = "<group>"; };
 		951D8278299D098000D35B20 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Playtools.strings"; sourceTree = "<group>"; };
 		954389C12B38922400B063BB /* MouseArea.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MouseArea.swift; sourceTree = "<group>"; };
@@ -480,6 +482,7 @@
 				6E7663A428D0FEBE00DE4AF9 /* AKPluginLoader.swift */,
 				B46C02C62C634AB5007637AB /* BatteryLevel.m */,
 				B46C02C82C634C60007637AB /* BatteryLevel.h */,
+				83B1FB7029C9AB94003BBBD4 /* MaaTools.swift */,
 			);
 			path = Utils;
 			sourceTree = "<group>";
@@ -742,6 +745,7 @@
 				9562D1732AB52416002C329D /* EditorKeyboardEventAdapter.swift in Sources */,
 				9562D1752AB52479002C329D /* EditorMouseEventAdapter.swift in Sources */,
 				AA7197AA287A481500623C15 /* Toast.swift in Sources */,
+				83B1FB7129C9AB94003BBBD4 /* MaaTools.swift in Sources */,
 				AA719789287A480D00623C15 /* PlayInput.swift in Sources */,
 				AA71970B287A44D200623C15 /* PlayLoader.m in Sources */,
 				9555ED332C058E36006E469C /* DebugController.swift in Sources */,
@@ -798,6 +802,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 29V29Y67P2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSPrincipalClass = "$(PRODUCT_BUNDLE_NAME).AKPlugin";
@@ -830,6 +835,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 29V29Y67P2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSPrincipalClass = "$(PRODUCT_BUNDLE_NAME).AKPlugin";
@@ -984,7 +990,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEFINES_MODULE = YES;
-				DEVELOPMENT_TEAM = 792V9HMJW3;
+				DEVELOPMENT_TEAM = 29V29Y67P2;
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
@@ -1029,7 +1035,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEFINES_MODULE = YES;
-				DEVELOPMENT_TEAM = 792V9HMJW3;
+				DEVELOPMENT_TEAM = 29V29Y67P2;
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";

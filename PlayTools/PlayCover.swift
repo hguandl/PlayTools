@@ -18,6 +18,10 @@ public class PlayCover: NSObject {
         PlayInput.shared.initialize()
         DiscordIPC.shared.initialize()
 
+        DispatchQueue.main.async {
+            MaaTools.shared.initialize()
+        }
+
         if PlaySettings.shared.rootWorkDir {
             // Change the working directory to / just like iOS
             FileManager.default.changeCurrentDirectoryPath("/")
