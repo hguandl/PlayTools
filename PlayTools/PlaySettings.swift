@@ -97,6 +97,8 @@ let settings = PlaySettings.shared
     @objc lazy var limitMotionUpdateFrequency = settingsData.limitMotionUpdateFrequency
 
     @objc lazy var disableBuiltinMouse = settingsData.disableBuiltinMouse
+
+    @objc lazy var blockSleepSpamming = settingsData.blockSleepSpamming
 }
 
 struct AppSettingsData: Codable {
@@ -131,4 +133,5 @@ struct AppSettingsData: Codable {
     var resizableAspectRatioType = 0
     var resizableAspectRatioWidth = 0
     var resizableAspectRatioHeight = 0
+    var blockSleepSpamming = false
 }
