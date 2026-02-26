@@ -5,10 +5,11 @@
 //  Created by hguandl on 21/3/2023.
 //
 
+import Accelerate
 import Network
 import OSLog
 
-private let MAA_TOOLS_VERSION = 2
+private let MAA_TOOLS_VERSION = 3
 
 @MainActor final class MaaTools {
     public static let shared = MaaTools()
@@ -36,6 +37,12 @@ private let MAA_TOOLS_VERSION = 2
     private let toucherMagic = Data([0x54, 0x55, 0x43, 0x48])
     // ['V', 'E', 'R', 'N']
     private let versionMagic = Data([0x56, 0x45, 0x52, 0x4e])
+    // ['B', 'N', 'D', 'L']
+    private let bundleMagic = Data([0x42, 0x4e, 0x44, 0x4c])
+    // ['R', 'E', 'C', 'T']
+    private let rectMagic = Data([0x52, 0x45, 0x43, 0x54])
+    // ['B', 'G', 'R', 0x01]
+    private let bgrMagic = Data([0x42, 0x47, 0x52, 0x01])
 
     func initialize() {
         guard PlaySettings.shared.maaTools else { return }
@@ -104,6 +111,8 @@ private let MAA_TOOLS_VERSION = 2
         listener?.start(queue: queue)
     }
 
+    // swiftlint:disable cyclomatic_complexity
+
     private func handlerTask(on connection: NWConnection) -> Task<Void, Error> {
         Task {
             let (handshake, _, _) = try await connection.receive(minimumIncompleteLength: 4, maximumLength: 4)
@@ -124,12 +133,20 @@ private let MAA_TOOLS_VERSION = 2
                     toucherDispatch(payload, on: connection)
                 case versionMagic:
                     try await version(to: connection)
+                case bundleMagic:
+                    try await bundleID(to: connection)
+                case rectMagic:
+                    try await rectangle(to: connection)
+                case bgrMagic:
+                    try await bgrScreencap(to: connection)
                 default:
                     break
                 }
             }
         }
     }
+
+    // swiftlint:enable cyclomatic_complexity
 
     // swiftlint:disable line_length
 
@@ -235,6 +252,84 @@ private let MAA_TOOLS_VERSION = 2
 
     private func version(to connection: NWConnection) async throws {
         try await connection.send(content: MAA_TOOLS_VERSION.u32Bytes)
+    }
+
+    private func bundleID(to connection: NWConnection) async throws {
+        let bundleID = Bundle.main.bundleIdentifier ?? ""
+        let data = Data(bundleID.utf8)
+        try await connection.send(content: data.count.u32Bytes + data)
+    }
+
+    private func rectangle(to connection: NWConnection) async throws {
+        let frame = AKInterface.shared?.windowFrame ?? CGRect()
+        let content = AKInterface.shared?.windowContentRect ?? CGRect()
+
+        let flatten = { (rect: CGRect) in
+            [rect.origin.x, rect.origin.y,
+             rect.size.width, rect.size.height]
+        }
+
+        let data = [frame, content].flatMap(flatten)
+            .map { Int($0.rounded()).u16Bytes }
+            .reduce(into: Data()) { partialResult, value in
+                partialResult.append(value)
+            }
+
+        try await connection.send(content: data)
+    }
+
+    private func bgrScreenshot() -> (Int, Int, Data)? {
+        guard let image = AKInterface.shared?.windowImage else {
+            logger.error("Failed to fetch CGImage")
+            return nil
+        }
+
+        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+        let bitmapInfo = CGBitmapInfo(alpha: .noneSkipLast, byteOrder: .orderDefault)
+
+        let format = vImage_CGImageFormat(bitsPerComponent: 8, bitsPerPixel: 32,
+                                          colorSpace: colorSpace, bitmapInfo: bitmapInfo)
+
+        let buffer: vImage_Buffer
+        do {
+            buffer = try vImage_Buffer(cgImage: image, format: format!)
+            logger.debug("Got buffer: \(buffer.width)x\(buffer.height)")
+        } catch {
+            logger.error("Failed to create buffer: \(error.localizedDescription)")
+            return nil
+        }
+        defer { buffer.free() }
+
+        // Crop the title bar
+        let expectedHeight = buffer.width * UInt(height) / UInt(width)
+        let titleBarHeight = buffer.height - expectedHeight
+        logger.debug("Cropping \(titleBarHeight) rows, expecting \(buffer.width)x\(expectedHeight)")
+
+        let offset = Int(titleBarHeight) * buffer.rowBytes
+        var src = vImage_Buffer(data: buffer.data + offset,
+                                height: expectedHeight, width: buffer.width,
+                                rowBytes: buffer.rowBytes)
+
+        let bgrLength = Int(3 * expectedHeight * buffer.width)
+        let bgrBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bgrLength)
+        var dst = vImage_Buffer(data: bgrBuffer,
+                                height: expectedHeight, width: buffer.width,
+                                rowBytes: 3 * Int(buffer.width))
+
+        vImagePermuteChannels_ARGB8888(&src, &src, [2, 1, 0, 3], vImage_Flags(kvImageNoFlags))
+        vImageConvert_RGBA8888toRGB888(&src, &dst, vImage_Flags(kvImageNoFlags))
+
+        let data = Data(bytesNoCopy: bgrBuffer, count: bgrLength, deallocator: .custom { pointer, _ in
+            pointer.deallocate()
+        })
+
+        return (Int(buffer.width), Int(expectedHeight), data)
+    }
+
+    private func bgrScreencap(to connection: NWConnection) async throws {
+        let (width, height, data) = bgrScreenshot() ?? (0, 0, Data())
+        let payload = width.u32Bytes + height.u32Bytes + data.count.u32Bytes + data
+        try await connection.send(content: payload)
     }
 }
 
