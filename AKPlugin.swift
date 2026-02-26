@@ -116,6 +116,13 @@ class AKPlugin: NSObject, Plugin {
         return CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(windowID), [.bestResolution, .boundsIgnoreFraming])
     }
 
+    var windowContentRect: CGRect {
+        guard let window = NSApplication.shared.windows.first else {
+            return CGRect()
+        }
+        return window.contentRect(forFrameRect: window.frame)
+    }
+
     var cmdPressed: Bool = false
     var cursorHideLevel = 0
     func hideCursor() {

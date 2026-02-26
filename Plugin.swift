@@ -35,4 +35,5 @@ public protocol Plugin: NSObjectProtocol {
 
     var windowTitle: String? { get set }
     var windowImage: CGImage? { get }
+    var windowContentRect: CGRect { get }
 }
