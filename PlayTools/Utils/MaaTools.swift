@@ -19,7 +19,7 @@ private let MAA_TOOLS_VERSION = 3
     private var listener: NWListener?
 
     private var windowTitle: String?
-    private var tid: Int?
+    private var tids: [Int: Int] = [:]
 
     private var scale = 1.0
     private var width = 0
@@ -213,41 +213,66 @@ private let MAA_TOOLS_VERSION = 3
     }
 
     private func screensize(to connection: NWConnection) async throws {
-        try await connection.send(content: width.u16Bytes + height.u16Bytes)
+        try await connection.send(content: width.u16Bytes + height.u16Bytes)	
     }
 
     private func toucherDispatch(_ content: Data, on _: NWConnection) {
-        let touchPhase = content[4]
+        guard content.count >= 9 else {
+            logger.error("Invalid touch payload size: \(content.count)")
+            return
+        }
 
+        let touchPhase = content[4]
         let pointX = content.u16(at: 5).divRound(by: scale)
         let pointY = content.u16(at: 7).divRound(by: scale)
+        let contact = content.count >= 10 ? Int(content[9]) : 0
 
         switch touchPhase {
         case 0:
-            toucherDown(atX: pointX, atY: pointY)
+            toucherDown(contact: contact, atX: pointX, atY: pointY)
         case 1:
-            toucherMove(atX: pointX, atY: pointY)
+            toucherMove(contact: contact, atX: pointX, atY: pointY)
         case 3:
-            toucherUp(atX: pointX, atY: pointY)
-            Toucher.keyView = nil
+            toucherUp(contact: contact, atX: pointX, atY: pointY)
+            if tids.isEmpty {
+                Toucher.keyView = nil
+            }
         default:
             break
         }
     }
 
-    private func toucherDown(atX: Int, atY: Int) {
+    private func toucherDown(contact: Int, atX: Int, atY: Int) {
+        var tid = tids[contact]
         Toucher.touchcam(point: .init(x: atX, y: atY), phase: .began, tid: &tid,
                          actionName: "down", keyName: "touch")
+        if let tid {
+            tids[contact] = tid
+        } else {
+            tids.removeValue(forKey: contact)
+        }
     }
 
-    private func toucherMove(atX: Int, atY: Int) {
+    private func toucherMove(contact: Int, atX: Int, atY: Int) {
+        var tid = tids[contact]
         Toucher.touchcam(point: .init(x: atX, y: atY), phase: .moved, tid: &tid,
                          actionName: "move", keyName: "touch")
+        if let tid {
+            tids[contact] = tid
+        } else {
+            tids.removeValue(forKey: contact)
+        }
     }
 
-    private func toucherUp(atX: Int, atY: Int) {
+    private func toucherUp(contact: Int, atX: Int, atY: Int) {
+        var tid = tids[contact]
         Toucher.touchcam(point: .init(x: atX, y: atY), phase: .ended, tid: &tid,
                          actionName: "up", keyName: "touch")
+        if let tid {
+            tids[contact] = tid
+        } else {
+            tids.removeValue(forKey: contact)
+        }
     }
 
     private func version(to connection: NWConnection) async throws {
