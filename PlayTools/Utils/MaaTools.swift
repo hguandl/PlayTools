@@ -14,12 +14,18 @@ private let MAA_TOOLS_VERSION = 3
 @MainActor final class MaaTools {
     public static let shared = MaaTools()
 
+    private final class TouchContext {
+        var tid: Int?
+        weak var keyWindow: UIWindow?
+        weak var keyView: UIView?
+    }
+
     private let logger = Logger(subsystem: "PlayTools", category: "MaaTools")
     private let queue = DispatchQueue(label: "MaaTools", qos: .default)
     private var listener: NWListener?
 
     private var windowTitle: String?
-    private var tids: [Int: Int] = [:]
+    private var touchContexts: [Int: TouchContext] = [:]
 
     private var scale = 1.0
     private var width = 0
@@ -213,7 +219,7 @@ private let MAA_TOOLS_VERSION = 3
     }
 
     private func screensize(to connection: NWConnection) async throws {
-        try await connection.send(content: width.u16Bytes + height.u16Bytes)	
+        try await connection.send(content: width.u16Bytes + height.u16Bytes)
     }
 
     private func toucherDispatch(_ content: Data, on _: NWConnection) {
@@ -234,7 +240,8 @@ private let MAA_TOOLS_VERSION = 3
             toucherMove(contact: contact, atX: pointX, atY: pointY)
         case 3:
             toucherUp(contact: contact, atX: pointX, atY: pointY)
-            if tids.isEmpty {
+            if touchContexts.isEmpty {
+                Toucher.keyWindow = nil
                 Toucher.keyView = nil
             }
         default:
@@ -243,35 +250,51 @@ private let MAA_TOOLS_VERSION = 3
     }
 
     private func toucherDown(contact: Int, atX: Int, atY: Int) {
-        var tid = tids[contact]
+        let context = touchContexts[contact] ?? TouchContext()
+        var tid = context.tid
         Toucher.touchcam(point: .init(x: atX, y: atY), phase: .began, tid: &tid,
                          actionName: "down", keyName: "touch")
         if let tid {
-            tids[contact] = tid
+            context.tid = tid
+            context.keyWindow = Toucher.keyWindow
+            context.keyView = Toucher.keyView
+            touchContexts[contact] = context
         } else {
-            tids.removeValue(forKey: contact)
+            touchContexts.removeValue(forKey: contact)
         }
     }
 
     private func toucherMove(contact: Int, atX: Int, atY: Int) {
-        var tid = tids[contact]
+        guard let context = touchContexts[contact] else { return }
+
+        var tid = context.tid
+        Toucher.keyWindow = context.keyWindow
+        Toucher.keyView = context.keyView
         Toucher.touchcam(point: .init(x: atX, y: atY), phase: .moved, tid: &tid,
                          actionName: "move", keyName: "touch")
         if let tid {
-            tids[contact] = tid
+            context.tid = tid
+            context.keyWindow = Toucher.keyWindow
+            context.keyView = Toucher.keyView
         } else {
-            tids.removeValue(forKey: contact)
+            touchContexts.removeValue(forKey: contact)
         }
     }
 
     private func toucherUp(contact: Int, atX: Int, atY: Int) {
-        var tid = tids[contact]
+        guard let context = touchContexts[contact] else { return }
+
+        var tid = context.tid
+        Toucher.keyWindow = context.keyWindow
+        Toucher.keyView = context.keyView
         Toucher.touchcam(point: .init(x: atX, y: atY), phase: .ended, tid: &tid,
                          actionName: "up", keyName: "touch")
         if let tid {
-            tids[contact] = tid
+            context.tid = tid
+            context.keyWindow = Toucher.keyWindow
+            context.keyView = Toucher.keyView
         } else {
-            tids.removeValue(forKey: contact)
+            touchContexts.removeValue(forKey: contact)
         }
     }
 
