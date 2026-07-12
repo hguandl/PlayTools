@@ -92,6 +92,8 @@ let settings = PlaySettings.shared
 
     @objc lazy var floatingWindow = settingsData.floatingWindow
 
+    @objc lazy var displayRotation = settingsData.displayRotation
+
     @objc lazy var checkMicPermissionSync = settingsData.checkMicPermissionSync
 
     @objc lazy var limitMotionUpdateFrequency = settingsData.limitMotionUpdateFrequency
@@ -99,6 +101,8 @@ let settings = PlaySettings.shared
     @objc lazy var disableBuiltinMouse = settingsData.disableBuiltinMouse
 
     @objc lazy var blockSleepSpamming = settingsData.blockSleepSpamming
+
+    @objc lazy var ignoreUnityKeyboardInitializationError = settingsData.ignoreUnityKeyboardInitializationError
 }
 
 struct AppSettingsData: Codable {
@@ -112,6 +116,7 @@ struct AppSettingsData: Codable {
     var customScaler = 2.0
     var resolution = 2
     var aspectRatio = 1
+    var displayRotation = 0
     var notch = false
     var bypass = false
     var discordActivity = DiscordActivity()
@@ -134,4 +139,5 @@ struct AppSettingsData: Codable {
     var resizableAspectRatioWidth = 0
     var resizableAspectRatioHeight = 0
     var blockSleepSpamming = false
+    var ignoreUnityKeyboardInitializationError = false
 }
