@@ -8,6 +8,8 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import ScreenCaptureKit
+import OSLog
 
 // Add a lightweight struct so we can decode only the flag we care about
 private struct AKAppSettingsData: Codable {
@@ -19,6 +21,42 @@ private struct AKAppSettingsData: Codable {
 }
 
 class AKPlugin: NSObject, Plugin {
+    private static let logger = Logger(subsystem: "PlayTools", category: "MaaTools")
+    @MainActor private static var didLogSCKFallback = false
+
+    // Cached ScreenCaptureKit filter. Building it requires enumerating all
+    // shareable content, which is relatively expensive; MAA requests a frame
+    // roughly once a second, so reuse the filter while the window is unchanged
+    // and refresh it periodically.
+    @MainActor
+    @available(macOS 14.0, *)
+    private final class SCKCache {
+        var filter: SCContentFilter?
+        var frame = CGRect.zero
+        var windowID: CGWindowID = 0
+        var refreshedAt = Date.distantPast
+
+        func resolve(for windowNumber: Int) async throws -> (SCContentFilter, CGRect) {
+            let now = Date()
+            let windowID = CGWindowID(windowNumber)
+            if let filter, self.windowID == windowID, now.timeIntervalSince(refreshedAt) < 3 {
+                return (filter, frame)
+            }
+            let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
+            guard let window = content.windows.first(where: { $0.windowID == windowID }) else {
+                throw SCKError.windowNotFound
+            }
+            let newFilter = SCContentFilter(desktopIndependentWindow: window)
+            filter = newFilter
+            frame = window.frame
+            self.windowID = windowID
+            refreshedAt = now
+            return (newFilter, frame)
+        }
+    }
+
+    private var sckCache: AnyObject?
+
     required override init() {
         super.init()
         if let window = NSApplication.shared.windows.first {
@@ -109,11 +147,103 @@ class AKPlugin: NSObject, Plugin {
         }
     }
 
+    // Proactively ask for Screen Recording while the game is foreground. MAA's
+    // screenshot requests arrive while the game is in the background, where
+    // macOS suppresses the TCC prompt; asking here (at launch, after the
+    // MaaTools switch is enabled) makes the system dialog appear and the user
+    // can simply click Allow. Only invoked when MAA is enabled.
+    @MainActor
+    func requestScreenRecordingIfNeeded() async {
+        if #available(macOS 14.0, *) {
+            // Delay slightly so the app finishes coming to the foreground.
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            _ = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
+        }
+    }
+
     var windowImage: CGImage? {
         guard let windowID = NSApplication.shared.windows.first?.windowNumber else {
             return nil
         }
         return CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(windowID), [.bestResolution, .boundsIgnoreFraming])
+    }
+
+    // Capture strategy: try the legacy CGWindowListCreateImage first (it works
+    // on older macOS without needing Screen Recording permission). On macOS 27
+    // beta it returns a flat dark frame for Metal content, so when the result
+    // looks blank we fall back to ScreenCaptureKit, which captures the real
+    // composited window content.
+    @MainActor
+    func captureImage() async -> CGImage? {
+        let legacy = windowImage
+        if let legacy = legacy, !looksBlank(legacy) {
+            return legacy
+        }
+        if #available(macOS 14.0, *),
+           let windowNumber = NSApplication.shared.windows.first?.windowNumber {
+            do {
+                let cache = (sckCache as? SCKCache) ?? SCKCache()
+                let (filter, frame) = try await cache.resolve(for: windowNumber)
+                sckCache = cache
+                let config = SCStreamConfiguration()
+                let scale = NSScreen.main?.backingScaleFactor ?? 2
+                config.width = Int(frame.width * scale)
+                config.height = Int(frame.height * scale)
+                config.showsCursor = false
+                let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+                logSCKFallbackOnce()
+                return image
+            } catch {
+                Self.logger.error("ScreenCaptureKit failed, returning legacy capture: \(error, privacy: .public)")
+            }
+        }
+        return legacy
+    }
+
+    private enum SCKError: Error {
+        case windowNotFound
+    }
+
+    @MainActor
+    private func logSCKFallbackOnce() {
+        guard !Self.didLogSCKFallback else { return }
+        Self.didLogSCKFallback = true
+        Self.logger.info("ScreenCaptureKit fallback active (legacy capture returns blank frames)")
+    }
+
+    // A blank/legacy-broken frame is nearly uniform with no bright pixels,
+    // e.g. the flat dark frame CGWindowListCreateImage returns on macOS 27 beta
+    // for Metal windows (everything ~44/255). Real frames have bright content.
+    // To avoid being fooled by the macOS title bar (which is drawn by the
+    // system and stays bright even when the Metal content below is black), we
+    // skip the top ~12% of the frame plus a small edge margin instead of
+    // assuming a fixed content aspect ratio.
+    private func looksBlank(_ image: CGImage) -> Bool {
+        let sw = 96, sh = 54
+        var buf = [UInt8](repeating: 0, count: sw * sh * 4)
+        guard let ctx = CGContext(data: &buf, width: sw, height: sh,
+                                  bitsPerComponent: 8, bytesPerRow: sw * 4,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            return false
+        }
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: sw, height: sh))
+        var maxV = 0
+        var sum = 0
+        var count = 0
+        let topSkip = sh * 12 / 100
+        let sideSkip = sw * 2 / 100
+        for y in topSkip..<sh {
+            for x in sideSkip..<(sw - sideSkip) {
+                let o = (y * sw + x) * 4
+                let v = Int(max(buf[o], buf[o + 1], buf[o + 2]))
+                if v > maxV { maxV = v }
+                sum += v
+                count += 1
+            }
+        }
+        let avg = count > 0 ? sum / count : 0
+        return maxV < 80 || (avg < 60 && maxV - avg < 12)
     }
 
     var windowContentRect: CGRect {
