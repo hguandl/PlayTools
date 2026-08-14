@@ -211,14 +211,18 @@ class AKPlugin: NSObject, Plugin {
         Self.logger.info("ScreenCaptureKit fallback active (legacy capture returns blank frames)")
     }
 
-    // A blank/legacy-broken frame is nearly uniform, e.g. the flat dark frame
-    // (everything ~44/255) or the flat bright frame (everything ~240/255) that
-    // CGWindowListCreateImage returns for Metal windows on macOS 27 beta.
-    // Real frames have contrast, so we treat low-contrast frames as blank and
-    // fall back to ScreenCaptureKit. To avoid being fooled by the macOS title
-    // bar (system-drawn, stays bright even when the Metal content below is
-    // black), we skip the top ~12% of the frame plus a small edge margin
-    // instead of assuming a fixed content aspect ratio.
+    // A blank/legacy-broken frame is nearly uniform. On macOS 27 beta,
+    // CGWindowListCreateImage cannot read the Metal content area and returns
+    // the window's empty background instead, which follows the system
+    // appearance: dark in dark mode (everything ~44/255), bright in light
+    // mode (everything ~240/255). Judging by absolute brightness alone would
+    // only catch one of the two, so we detect low-contrast frames
+    // (maxV - avg < 12) regardless of brightness and fall back to
+    // ScreenCaptureKit. Real frames have contrast and are never affected.
+    // To avoid being fooled by the macOS title bar (system-drawn, stays
+    // bright even when the Metal content below is black), we skip the top
+    // ~12% of the frame plus a small edge margin instead of assuming a fixed
+    // content aspect ratio.
     private func looksBlank(_ image: CGImage) -> Bool {
         let sw = 96, sh = 54
         var buf = [UInt8](repeating: 0, count: sw * sh * 4)
