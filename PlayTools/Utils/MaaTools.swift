@@ -47,14 +47,6 @@ private let MAA_TOOLS_VERSION = 3
     func initialize() {
         guard PlaySettings.shared.maaTools else { return }
 
-        // Ask for Screen Recording while the game is foreground, but do not
-        // block server startup on the TCC prompt. Without this, MAA's
-        // screenshot requests arrive while the game is in the background,
-        // where macOS suppresses the prompt.
-        Task {
-            await AKInterface.shared?.requestScreenRecordingIfNeeded()
-        }
-
         Task {
             // Wait for window
             while width == 0 || height == 0 || windowTitle == nil {

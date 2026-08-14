@@ -36,6 +36,5 @@ public protocol Plugin: NSObjectProtocol {
     var windowTitle: String? { get set }
     var windowImage: CGImage? { get }
     func captureImage() async -> CGImage?
-    func requestScreenRecordingIfNeeded() async
     var windowContentRect: CGRect { get }
 }
