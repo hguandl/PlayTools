@@ -162,6 +162,9 @@ private let MAA_TOOLS_VERSION = 3
                         try Task.checkCancellation()
                         let (payload, _, _) = try await connection.receive(minimumIncompleteLength: length, maximumLength: length)
                         continuation.yield(payload)
+                    } catch MaaToolsError.emptyContent(let isComplete) where isComplete {
+                        continuation.finish()
+                        break
                     } catch {
                         continuation.finish(throwing: error)
                         break
@@ -178,22 +181,13 @@ private let MAA_TOOLS_VERSION = 3
     // swiftlint:enable line_length
 
     private func screencap(to connection: NWConnection) async throws {
-        let data = screenshot() ?? Data()
+        let data = await screenshot() ?? Data()
         try await connection.send(content: data.count.u32Bytes + data)
     }
 
-    private func screenshot() -> Data? {
-        guard let image = AKInterface.shared?.windowImage else {
+    private func screenshot() async -> Data? {
+        guard let image = await AKInterface.shared?.windowImage() else {
             logger.error("Failed to fetch CGImage")
-            return nil
-        }
-
-        // Crop the title bar
-        let titleBarHeight = image.height - image.width * height / width
-        let contentRect = CGRect(x: 0, y: titleBarHeight, width: image.width,
-                                 height: image.height - titleBarHeight)
-        guard let image = image.cropping(to: contentRect) else {
-            logger.error("Failed to crop image")
             return nil
         }
 
@@ -278,63 +272,51 @@ private let MAA_TOOLS_VERSION = 3
         try await connection.send(content: data)
     }
 
-    private func bgrScreenshot() -> (Int, Int, Data)? {
-        guard let image = AKInterface.shared?.windowImage else {
+    private func bgrScreenshot() async -> ((Int, Int), Data)? {
+        guard let image = await AKInterface.shared?.windowImage() else {
             logger.error("Failed to fetch CGImage")
             return nil
         }
 
-        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
-        let bitmapInfo = CGBitmapInfo(alpha: .noneSkipLast, byteOrder: .orderDefault)
-
-        let format = vImage_CGImageFormat(bitsPerComponent: 8, bitsPerPixel: 32,
-                                          colorSpace: colorSpace, bitmapInfo: bitmapInfo)
-
-        let buffer: vImage_Buffer
+        var src: vImage_Buffer
         do {
-            buffer = try vImage_Buffer(cgImage: image, format: format!)
-            logger.debug("Got buffer: \(buffer.width)x\(buffer.height)")
+            src = try makeBuffer(image)
+            logger.debug("Got buffer: \(src.width)x\(src.height)")
         } catch {
             logger.error("Failed to create buffer: \(error.localizedDescription)")
             return nil
         }
-        defer { buffer.free() }
+        defer { src.free() }
 
-        // Crop the title bar
-        let expectedHeight = buffer.width * UInt(height) / UInt(width)
-        let titleBarHeight = buffer.height - expectedHeight
-        logger.debug("Cropping \(titleBarHeight) rows, expecting \(buffer.width)x\(expectedHeight)")
-
-        let offset = Int(titleBarHeight) * buffer.rowBytes
-        var src = vImage_Buffer(data: buffer.data + offset,
-                                height: expectedHeight, width: buffer.width,
-                                rowBytes: buffer.rowBytes)
-
-        let bgrLength = Int(3 * expectedHeight * buffer.width)
+        let bgrLength = Int(3 * src.height * src.width)
         let bgrBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bgrLength)
         var dst = vImage_Buffer(data: bgrBuffer,
-                                height: expectedHeight, width: buffer.width,
-                                rowBytes: 3 * Int(buffer.width))
+                                height: src.height, width: src.width,
+                                rowBytes: 3 * Int(src.width))
 
-        vImagePermuteChannels_ARGB8888(&src, &src, [2, 1, 0, 3], vImage_Flags(kvImageNoFlags))
-        vImageConvert_RGBA8888toRGB888(&src, &dst, vImage_Flags(kvImageNoFlags))
+        let result = vImageConvert_RGBA8888toRGB888(&src, &dst, vImage_Flags(kvImageNoFlags))
+        guard result == kvImageNoError else {
+            logger.error("Failed to remove alpha: \(vImage.Error(vImageError: result))")
+            bgrBuffer.deallocate()
+            return nil
+        }
 
         let data = Data(bytesNoCopy: bgrBuffer, count: bgrLength, deallocator: .custom { pointer, _ in
             pointer.deallocate()
         })
 
-        return (Int(buffer.width), Int(expectedHeight), data)
+        return ((Int(src.width), Int(src.height)), data)
     }
 
     private func bgrScreencap(to connection: NWConnection) async throws {
-        let (width, height, data) = bgrScreenshot() ?? (0, 0, Data())
+        let ((width, height), data) = await bgrScreenshot() ?? ((0, 0), Data())
         let payload = width.u32Bytes + height.u32Bytes + data.count.u32Bytes + data
         try await connection.send(content: payload)
     }
 }
 
 private enum MaaToolsError: Error {
-    case emptyContent
+    case emptyContent(Bool)
     case invalidMessage
 }
 
@@ -374,7 +356,7 @@ private extension NWConnection {
                 }
 
                 guard let content, let contentContext else {
-                    continuation.resume(throwing: MaaToolsError.emptyContent)
+                    continuation.resume(throwing: MaaToolsError.emptyContent(isComplete))
                     return
                 }
 
@@ -397,3 +379,40 @@ private extension NWConnection {
 }
 
 // swiftlint:enable large_tuple line_length
+
+// swiftlint:disable file_length
+
+extension MaaTools {
+    private static let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
+
+    private static let bgrXFormat = {
+        let bitmapInfo = CGBitmapInfo(alpha: .noneSkipFirst, byteOrder: .order32Little)
+        return vImage_CGImageFormat(bitsPerComponent: 8, bitsPerPixel: 32,
+                                    colorSpace: srgb, bitmapInfo: bitmapInfo)!
+    }()
+
+    private func matchesBGRAFormat(_ image: CGImage) -> Bool {
+        if image.bitsPerComponent == 8,
+           image.bitsPerPixel == 32,
+           image.colorSpace == Self.srgb,
+           image.bitmapInfo.byteOrder == .order32Little {
+            switch image.bitmapInfo.alpha {
+            case .first, .noneSkipFirst, .premultipliedFirst:
+                return true
+            default:
+                break
+            }
+        }
+        return false
+    }
+
+    private func makeBuffer(_ image: CGImage) throws -> vImage_Buffer {
+        if matchesBGRAFormat(image) {
+            return try vImage_Buffer(cgImage: image)
+        } else {
+            return try vImage_Buffer(cgImage: image, format: Self.bgrXFormat)
+        }
+    }
+}
+
+// swiftlint:enable file_length
