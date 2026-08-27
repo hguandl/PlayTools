@@ -34,6 +34,6 @@ public protocol Plugin: NSObjectProtocol {
     func setMenuBarVisible(_ value: Bool)
 
     var windowTitle: String? { get set }
-    var windowImage: CGImage? { get }
-    var windowContentRect: CGRect { get }
+    @MainActor func windowImage() async -> CGImage?
+    @MainActor var windowContentRect: CGRect { get }
 }
