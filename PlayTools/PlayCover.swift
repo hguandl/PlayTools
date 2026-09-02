@@ -18,6 +18,9 @@ public class PlayCover: NSObject {
         PlayInput.shared.initialize()
         DiscordIPC.shared.initialize()
 
+        if ArknightsMetalCapture.installation == true {
+            print("[PlayTools] Installed Metal capture hooks.")
+        }
         DispatchQueue.main.async {
             MaaTools.shared.initialize()
         }

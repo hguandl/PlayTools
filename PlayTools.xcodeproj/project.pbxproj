@@ -15,6 +15,11 @@
 		6E84A14528D0F94E00BF7495 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA818CBA287ABFD5000BEE9D /* UIKit.framework */; };
 		6E84A15028D0F97500BF7495 /* AKInterface.bundle in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 6E84A14C28D0F96D00BF7495 /* AKInterface.bundle */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		83B1FB7129C9AB94003BBBD4 /* MaaTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83B1FB7029C9AB94003BBBD4 /* MaaTools.swift */; };
+		83FFD5F130474C12007E2037 /* MetalCaptureHook.m in Sources */ = {isa = PBXBuildFile; fileRef = 83FFD5F030474C12007E2037 /* MetalCaptureHook.m */; };
+		83FFD5F230474C12007E2037 /* MetalCaptureHook.h in Headers */ = {isa = PBXBuildFile; fileRef = 83FFD5EF30474C12007E2037 /* MetalCaptureHook.h */; };
+		83FFD5F430474C76007E2037 /* ArknightsMetalCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83FFD5F330474C76007E2037 /* ArknightsMetalCapture.swift */; };
+		83FFD5F6304751AE007E2037 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 83FFD5F5304751AE007E2037 /* CoreGraphics.framework */; };
+		83FFD5FA304822DB007E2037 /* MetalCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83FFD5F9304822DB007E2037 /* MetalCapture.swift */; };
 		951D8275299D097C00D35B20 /* Playtools.strings in Resources */ = {isa = PBXBuildFile; fileRef = 951D8277299D097C00D35B20 /* Playtools.strings */; };
 		954389C22B38922400B063BB /* MouseArea.swift in Sources */ = {isa = PBXBuildFile; fileRef = 954389C12B38922400B063BB /* MouseArea.swift */; };
 		954389C42B38968C00B063BB /* Joystick.swift in Sources */ = {isa = PBXBuildFile; fileRef = 954389C32B38968C00B063BB /* Joystick.swift */; };
@@ -87,6 +92,7 @@
 		B66E65002C936EA100E48FD0 /* PlayedAppleDBConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66E64FF2C936E9800E48FD0 /* PlayedAppleDBConstants.swift */; };
 		B6D774FF2ACFC3D900C0D9D8 /* SwordRPC in Frameworks */ = {isa = PBXBuildFile; productRef = B6D774FE2ACFC3D900C0D9D8 /* SwordRPC */; };
 		D04B12CA2EF6F3DD008FEC14 /* MediaVolume.m in Sources */ = {isa = PBXBuildFile; fileRef = D04B12C92EF6F3DD008FEC14 /* MediaVolume.m */; };
+		D4A1B1062F00000100000001 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D4A1B1072F00000100000001 /* Metal.framework */; };
 		EEB248592B81D074000C230A /* PlayedAppleDB.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEB248582B81D074000C230A /* PlayedAppleDB.swift */; };
 /* End PBXBuildFile section */
 
@@ -112,6 +118,11 @@
 		6E7663A428D0FEBE00DE4AF9 /* AKPluginLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AKPluginLoader.swift; sourceTree = "<group>"; };
 		6E84A14C28D0F96D00BF7495 /* AKInterface.bundle */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AKInterface.bundle; sourceTree = BUILT_PRODUCTS_DIR; };
 		83B1FB7029C9AB94003BBBD4 /* MaaTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaaTools.swift; sourceTree = "<group>"; };
+		83FFD5EF30474C12007E2037 /* MetalCaptureHook.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MetalCaptureHook.h; sourceTree = "<group>"; };
+		83FFD5F030474C12007E2037 /* MetalCaptureHook.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = MetalCaptureHook.m; sourceTree = "<group>"; };
+		83FFD5F330474C76007E2037 /* ArknightsMetalCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArknightsMetalCapture.swift; sourceTree = "<group>"; };
+		83FFD5F5304751AE007E2037 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk/System/Library/Frameworks/CoreGraphics.framework; sourceTree = DEVELOPER_DIR; };
+		83FFD5F9304822DB007E2037 /* MetalCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalCapture.swift; sourceTree = "<group>"; };
 		951D8276299D097C00D35B20 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Playtools.strings; sourceTree = "<group>"; };
 		951D8278299D098000D35B20 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Playtools.strings"; sourceTree = "<group>"; };
 		954389C12B38922400B063BB /* MouseArea.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MouseArea.swift; sourceTree = "<group>"; };
@@ -190,6 +201,8 @@
 		B66E64FF2C936E9800E48FD0 /* PlayedAppleDBConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayedAppleDBConstants.swift; sourceTree = "<group>"; };
 		D04B12C92EF6F3DD008FEC14 /* MediaVolume.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = MediaVolume.m; sourceTree = "<group>"; };
 		D04B12CC2EF6F3F9008FEC14 /* MediaVolume.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MediaVolume.h; sourceTree = "<group>"; };
+		D4A1B1072F00000100000001 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.3.sdk/System/iOSSupport/System/Library/Frameworks/Metal.framework; sourceTree = DEVELOPER_DIR; };
+		D4A1B1092F00000100000001 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.3.sdk/System/iOSSupport/System/Library/Frameworks/QuartzCore.framework; sourceTree = DEVELOPER_DIR; };
 		EEB248582B81D074000C230A /* PlayedAppleDB.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayedAppleDB.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -208,6 +221,8 @@
 				B6D774FF2ACFC3D900C0D9D8 /* SwordRPC in Frameworks */,
 				6E84A14528D0F94E00BF7495 /* UIKit.framework in Frameworks */,
 				AA818CB9287ABFB1000BEE9D /* IOKit.framework in Frameworks */,
+				83FFD5F6304751AE007E2037 /* CoreGraphics.framework in Frameworks */,
+				D4A1B1062F00000100000001 /* Metal.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -222,6 +237,17 @@
 				6E76639628D0FA6200DE4AF9 /* AKInterface-Bridging-Header.h */,
 			);
 			name = AKInterface;
+			sourceTree = "<group>";
+		};
+		83FFD5F830482209007E2037 /* Captures */ = {
+			isa = PBXGroup;
+			children = (
+				83FFD5EF30474C12007E2037 /* MetalCaptureHook.h */,
+				83FFD5F030474C12007E2037 /* MetalCaptureHook.m */,
+				83FFD5F330474C76007E2037 /* ArknightsMetalCapture.swift */,
+				83FFD5F9304822DB007E2037 /* MetalCapture.swift */,
+			);
+			path = Captures;
 			sourceTree = "<group>";
 		};
 		954389BE2B37C75C00B063BB /* Models */ = {
@@ -445,6 +471,7 @@
 				AA719799287A481500623C15 /* Editor */,
 				954389D02B3A010E00B063BB /* Keymap */,
 				AA719791287A481500623C15 /* Utils */,
+				83FFD5F830482209007E2037 /* Captures */,
 				AA71970A287A44D200623C15 /* Info.plist */,
 				AA719704287A44D200623C15 /* PlaySettings.swift */,
 				AA719706287A44D200623C15 /* PlayCover.swift */,
@@ -534,8 +561,11 @@
 		AA818CB7287ABFB1000BEE9D /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				83FFD5F5304751AE007E2037 /* CoreGraphics.framework */,
 				AA818CBA287ABFD5000BEE9D /* UIKit.framework */,
 				AA818CB8287ABFB1000BEE9D /* IOKit.framework */,
+				D4A1B1072F00000100000001 /* Metal.framework */,
+				D4A1B1092F00000100000001 /* QuartzCore.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -574,6 +604,7 @@
 				AA719862287A81A000623C15 /* UITouch-KIFAdditions.h in Headers */,
 				AA71986B287A81A000623C15 /* UIApplication+Private.h in Headers */,
 				AA71986D287A81A000623C15 /* PTFakeMetaTouch.h in Headers */,
+				83FFD5F230474C12007E2037 /* MetalCaptureHook.h in Headers */,
 				AA719870287A81A000623C15 /* UIEvent+Private.h in Headers */,
 				AA71970E287A44D200623C15 /* PlayLoader.h in Headers */,
 				AA719872287A81A000623C15 /* UITouch+Private.h in Headers */,
@@ -726,6 +757,7 @@
 				6E76639B28D0FAE700DE4AF9 /* Plugin.swift in Sources */,
 				B1271729288284BE0025112B /* DiscordActivity.swift in Sources */,
 				EEB248592B81D074000C230A /* PlayedAppleDB.swift in Sources */,
+				83FFD5FA304822DB007E2037 /* MetalCapture.swift in Sources */,
 				954389CC2B39F03D00B063BB /* EditorView.swift in Sources */,
 				954389C22B38922400B063BB /* MouseArea.swift in Sources */,
 				AA7197AB287A481500623C15 /* Element.swift in Sources */,
@@ -765,12 +797,14 @@
 				AA71978A287A480D00623C15 /* ControlMode.swift in Sources */,
 				AA7197AD287A481500623C15 /* EditorController.swift in Sources */,
 				9562D16B2AB505AD002C329D /* MouseEventAdapter.swift in Sources */,
+				83FFD5F130474C12007E2037 /* MetalCaptureHook.m in Sources */,
 				9562D15C2AB4FC79002C329D /* TransparentMouseEventAdapter.swift in Sources */,
 				9562D1772AB52550002C329D /* EditorControllerEventAdapter.swift in Sources */,
 				AA7197A3287A481500623C15 /* CircleMenuButton.swift in Sources */,
 				9562D1582AB4FB9B002C329D /* TouchscreenKeyboardEventAdapter.swift in Sources */,
 				9555ED312C058E28006E469C /* DebugModel.swift in Sources */,
 				AA7197A9287A481500623C15 /* PlayInfo.swift in Sources */,
+				83FFD5F430474C76007E2037 /* ArknightsMetalCapture.swift in Sources */,
 				AA71986A287A81A000623C15 /* PTFakeMetaTouch.m in Sources */,
 				9562D15E2AB4FCB8002C329D /* TouchscreenControllerEventAdapter.swift in Sources */,
 				954389C62B3896E600B063BB /* ChildButton.swift in Sources */,

@@ -9,7 +9,9 @@ import Accelerate
 import Network
 import OSLog
 
-private let MAA_TOOLS_VERSION = 3
+private let MAA_TOOLS_VERSION = 4
+
+// swiftlint:disable file_length type_body_length
 
 @MainActor final class MaaTools {
     public static let shared = MaaTools()
@@ -43,6 +45,8 @@ private let MAA_TOOLS_VERSION = 3
     private let rectMagic = Data([0x52, 0x45, 0x43, 0x54])
     // ['B', 'G', 'R', 0x01]
     private let bgrMagic = Data([0x42, 0x47, 0x52, 0x01])
+    // ['M', 'T', 'L', 0x00]
+    private let mtlMagic = Data([0x4d, 0x54, 0x4c, 0x00])
 
     func initialize() {
         guard PlaySettings.shared.maaTools else { return }
@@ -121,6 +125,8 @@ private let MAA_TOOLS_VERSION = 3
             }
             try await connection.send(content: "OKAY".data(using: .ascii))
 
+            var pool = ByteBufferPool(capacity: 3 * 1280 * 720)
+
             for try await payload in readPayload(from: connection) {
                 switch payload.prefix(4) {
                 case screencapMagic:
@@ -138,7 +144,9 @@ private let MAA_TOOLS_VERSION = 3
                 case rectMagic:
                     try await rectangle(to: connection)
                 case bgrMagic:
-                    try await bgrScreencap(to: connection)
+                    try await bgrScreencap(to: connection, pool: &pool)
+                case mtlMagic:
+                    try await mtlScreencap(to: connection, pool: &pool)
                 default:
                     break
                 }
@@ -272,46 +280,93 @@ private let MAA_TOOLS_VERSION = 3
         try await connection.send(content: data)
     }
 
-    private func bgrScreenshot() async -> ((Int, Int), Data)? {
+    private func bgrScreenshot() async -> vImage_Buffer? {
         guard let image = await AKInterface.shared?.windowImage() else {
             logger.error("Failed to fetch CGImage")
             return nil
         }
-
-        var src: vImage_Buffer
         do {
-            src = try makeBuffer(image)
-            logger.debug("Got buffer: \(src.width)x\(src.height)")
+            let buffer = try makeBuffer(image)
+            logger.debug("Got buffer: \(buffer.width)x\(buffer.height)")
+            return buffer
         } catch {
             logger.error("Failed to create buffer: \(error.localizedDescription)")
             return nil
         }
+    }
+
+    private func bgrScreencap(to connection: NWConnection, pool: inout ByteBufferPool) async throws {
+        guard var src = await bgrScreenshot() else {
+            try await connection.send(content: 0.u32Bytes + 0.u32Bytes + 0.u32Bytes)
+            return
+        }
         defer { src.free() }
 
-        let bgrLength = Int(3 * src.height * src.width)
-        let bgrBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bgrLength)
-        var dst = vImage_Buffer(data: bgrBuffer,
+        let length = Int(3 * src.height * src.width)
+        let buffer = pool.acquire(capacity: length)
+        var dst = vImage_Buffer(data: buffer,
                                 height: src.height, width: src.width,
                                 rowBytes: 3 * Int(src.width))
 
-        let result = vImageConvert_RGBA8888toRGB888(&src, &dst, vImage_Flags(kvImageNoFlags))
-        guard result == kvImageNoError else {
-            logger.error("Failed to remove alpha: \(vImage.Error(vImageError: result))")
-            bgrBuffer.deallocate()
-            return nil
-        }
+        vImageConvert_RGBA8888toRGB888(&src, &dst, vImage_Flags(kvImageNoFlags))
 
-        let data = Data(bytesNoCopy: bgrBuffer, count: bgrLength, deallocator: .custom { pointer, _ in
-            pointer.deallocate()
-        })
+        let header = src.width.u32Bytes + src.height.u32Bytes + length.u32Bytes
+        let data = Data(bytesNoCopy: buffer, count: length, deallocator: .none)
 
-        return ((Int(src.width), Int(src.height)), data)
+        try await connection.send(content: header)
+        try await connection.send(content: data)
     }
 
-    private func bgrScreencap(to connection: NWConnection) async throws {
-        let ((width, height), data) = await bgrScreenshot() ?? ((0, 0), Data())
-        let payload = width.u32Bytes + height.u32Bytes + data.count.u32Bytes + data
-        try await connection.send(content: payload)
+    private func mtlScreencap(to connection: NWConnection, pool: inout ByteBufferPool) async throws {
+        let frame: MetalCapture
+        do {
+            frame = try await ArknightsMetalCapture.shared.capture()
+        } catch {
+            logger.error("Failed to capture frame: \(error.localizedDescription)")
+            try await connection.send(content: 0.u32Bytes + 0.u32Bytes + 0.u32Bytes)
+            return
+        }
+
+        var src = vImage_Buffer(data: frame.buffer.contents(),
+                                height: UInt(frame.height), width: UInt(frame.width),
+                                rowBytes: 4 * frame.width)
+
+        let length = 3 * frame.height * frame.width
+        let buffer = pool.acquire(capacity: length)
+        var dst = vImage_Buffer(data: buffer,
+                                height: src.height, width: src.width,
+                                rowBytes: 3 * Int(src.width))
+
+        vImageConvert_RGBA8888toRGB888(&src, &dst, vImage_Flags(kvImageNoFlags))
+
+        let header = frame.width.u32Bytes + frame.height.u32Bytes + length.u32Bytes
+        let data = Data(bytesNoCopy: buffer, count: length, deallocator: .none)
+
+        try await connection.send(content: header)
+        try await connection.send(content: data)
+    }
+}
+
+private struct ByteBufferPool: ~Copyable {
+    private var pointer: UnsafeMutablePointer<UInt8>
+    private var capacity: Int
+
+    init(capacity: Int) {
+        self.capacity = capacity
+        self.pointer = .allocate(capacity: capacity)
+    }
+
+    deinit {
+        pointer.deallocate()
+    }
+
+    mutating func acquire(capacity: Int) -> UnsafeMutablePointer<UInt8> {
+        if capacity > self.capacity {
+            pointer.deallocate()
+            pointer = .allocate(capacity: capacity)
+            self.capacity = capacity
+        }
+        return pointer
     }
 }
 
@@ -334,6 +389,13 @@ private extension Int {
     func divRound(by div: Double) -> Int {
         let value = Double(self) / div
         return Int(value.rounded())
+    }
+}
+
+private extension UInt {
+    var u32Bytes: Data {
+        let bytes = [UInt8(self >> 24 & 0xff), UInt8(self >> 16 & 0xff), UInt8(self >> 8 & 0xff), UInt8(self & 0xff)]
+        return Data(bytes)
     }
 }
 
@@ -380,8 +442,6 @@ private extension NWConnection {
 
 // swiftlint:enable large_tuple line_length
 
-// swiftlint:disable file_length
-
 extension MaaTools {
     private static let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
 
@@ -415,4 +475,4 @@ extension MaaTools {
     }
 }
 
-// swiftlint:enable file_length
+// swiftlint:enable file_length type_body_length
