@@ -21,7 +21,8 @@ private let MAA_TOOLS_VERSION = 4
     private var listener: NWListener?
 
     private var windowTitle: String?
-    private var tid: Int?
+    /// All reads and writes must occur on ``PlayInput.touchQueue``.
+    private nonisolated(unsafe) var touchContexts = [Int: Int]()
 
     private var scale = 1.0
     private var width = 0
@@ -223,33 +224,28 @@ private let MAA_TOOLS_VERSION = 4
 
         let pointX = content.u16(at: 5).divRound(by: scale)
         let pointY = content.u16(at: 7).divRound(by: scale)
+        let contact = content.count >= 10 ? Int(content[9]) : 0
 
-        switch touchPhase {
-        case 0:
-            toucherDown(atX: pointX, atY: pointY)
-        case 1:
-            toucherMove(atX: pointX, atY: pointY)
-        case 3:
-            toucherUp(atX: pointX, atY: pointY)
-            Toucher.keyView = nil
-        default:
-            break
+        PlayInput.touchQueue.async {
+            var tid = self.touchContexts[contact]
+            switch touchPhase {
+            case 0:
+                Toucher.touchcam(point: .init(x: pointX, y: pointY),
+                                 phase: .began, tid: &tid,
+                                 actionName: "down", keyName: "touch")
+            case 1:
+                Toucher.touchcam(point: .init(x: pointX, y: pointY),
+                                 phase: .moved, tid: &tid,
+                                 actionName: "move", keyName: "touch")
+            case 3:
+                Toucher.touchcam(point: .init(x: pointX, y: pointY),
+                                 phase: .ended, tid: &tid,
+                                 actionName: "up", keyName: "touch")
+            default:
+                break
+            }
+            self.touchContexts[contact] = tid
         }
-    }
-
-    private func toucherDown(atX: Int, atY: Int) {
-        Toucher.touchcam(point: .init(x: atX, y: atY), phase: .began, tid: &tid,
-                         actionName: "down", keyName: "touch")
-    }
-
-    private func toucherMove(atX: Int, atY: Int) {
-        Toucher.touchcam(point: .init(x: atX, y: atY), phase: .moved, tid: &tid,
-                         actionName: "move", keyName: "touch")
-    }
-
-    private func toucherUp(atX: Int, atY: Int) {
-        Toucher.touchcam(point: .init(x: atX, y: atY), phase: .ended, tid: &tid,
-                         actionName: "up", keyName: "touch")
     }
 
     private func version(to connection: NWConnection) async throws {
