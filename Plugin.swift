@@ -10,7 +10,7 @@ import CoreGraphics
 
 @objc(Plugin)
 public protocol Plugin: NSObjectProtocol {
-    init()
+    init(sckAvailable: Bool)
 
     var screenCount: Int { get }
     var mousePoint: CGPoint { get }
@@ -33,6 +33,7 @@ public protocol Plugin: NSObjectProtocol {
     func urlForApplicationWithBundleIdentifier(_ value: String) -> URL?
     func setMenuBarVisible(_ value: Bool)
 
+    var sckAvailable: Bool { get }
     var windowTitle: String? { get set }
     @MainActor func windowImage() async -> CGImage?
     @MainActor var windowContentRect: CGRect { get }

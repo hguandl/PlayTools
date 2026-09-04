@@ -20,8 +20,11 @@ private struct AKAppSettingsData: Codable {
     var resizableAspectRatioHeight: Int?
 }
 
+// swiftlint:disable file_length type_body_length
+
 class AKPlugin: NSObject, Plugin {
-    required override init() {
+    required init(sckAvailable: Bool) {
+        self.sckAvailable = sckAvailable
         super.init()
         if let window = NSApplication.shared.windows.first {
             window.styleMask.insert([.resizable])
@@ -98,6 +101,8 @@ class AKPlugin: NSObject, Plugin {
         NSApplication.shared.windows.first!.styleMask.contains(.fullScreen)
     }
 
+    let sckAvailable: Bool
+
     var windowTitle: String? {
         get {
             NSApplication.shared.windows.first?.title
@@ -135,7 +140,6 @@ class AKPlugin: NSObject, Plugin {
         return nil
     }
 
-    @available(macOS, deprecated: 14.4, renamed: "windowImage()")
     @MainActor private var windowImage: CGImage? {
         guard let windowID else {
             return nil
@@ -156,7 +160,7 @@ class AKPlugin: NSObject, Plugin {
                                        [.bestResolution, .boundsIgnoreFraming, .shouldBeOpaque])
     }
 
-    @available(macOS 14.4, *)
+    @available(macOS 14.4, macCatalyst 14.4, *)
     private func captureImage(_ windowID: CGWindowID, size: CGSize) async throws -> CGImage? {
         let content = try await SCShareableContent.currentProcess
         guard let window = content.windows.first(where: { $0.windowID == windowID }) else {
@@ -186,7 +190,7 @@ class AKPlugin: NSObject, Plugin {
     }
 
     func windowImage() async -> CGImage? {
-        if #available(macOS 14.4, *) {
+        if #available(macOS 14.4, macCatalyst 14.4, *), sckAvailable {
             do {
                 guard let windowID else { return nil }
                 return try await captureImage(windowID, size: windowContentRect.size)
@@ -424,3 +428,5 @@ class AKPlugin: NSObject, Plugin {
         return decoded
     }()
 }
+
+// swiftlint:enable file_length type_body_length
