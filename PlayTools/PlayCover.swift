@@ -29,7 +29,7 @@ public class PlayCover: NSObject {
         }
 
         // runningboardd only freezes invisible scenes since macOS 15 (= iOS 18).
-        if #available(iOS 18.0, *) {
+        if #available(iOS 18.0, *), PlaySettings.shared.backgroundKeepAlive {
             BackgroundKeepAlive.shared.start()
         }
 
@@ -73,7 +73,9 @@ public class PlayCover: NSObject {
                 // The steps below replay exactly the lifecycle events the
                 // background keep-alive suppresses; let them through again
                 // so the app can save its state before terminating.
-                BackgroundKeepAlive.shared.prepareForTermination()
+                if #available(iOS 18.0, *), PlaySettings.shared.backgroundKeepAlive {
+                    BackgroundKeepAlive.shared.prepareForTermination()
+                }
 
                 // Step 1: Resign active
                 for scene in UIApplication.shared.connectedScenes {
