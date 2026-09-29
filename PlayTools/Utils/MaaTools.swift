@@ -8,6 +8,7 @@
 import Accelerate
 import Network
 import OSLog
+import WebKit
 
 private let MAA_TOOLS_VERSION = 4
 
@@ -221,6 +222,7 @@ private let MAA_TOOLS_VERSION = 4
     // Window capture goes stale while the session is off console; Metal frames stay live.
     private func metalScreenshot() async -> Data? {
         guard let buffer = await metalPixels() else { return nil }
+        await drawWebViewOverlays(onto: buffer)
         return Data(bytesNoCopy: buffer, count: 4 * width * height,
                     deallocator: .custom { pointer, _ in pointer.deallocate() })
     }
@@ -258,6 +260,57 @@ private let MAA_TOOLS_VERSION = 4
                 return nil
             }
             return buffer
+        }
+    }
+
+    // Web views such as announcements are not part of the Metal frame.
+    private func drawWebViewOverlays(onto buffer: UnsafeMutablePointer<UInt8>) async {
+        let overlays = UIApplication.shared.connectedScenes
+            .flatMap { ($0 as? UIWindowScene)?.windows ?? [] }
+            .sorted { $0.windowLevel < $1.windowLevel }
+            .flatMap { Self.visibleWebViews(in: $0, alpha: 1) }
+        guard !overlays.isEmpty,
+              let context = CGContext(data: buffer, width: width, height: height,
+                                      bitsPerComponent: 8, bytesPerRow: 4 * width,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
+        else { return }
+
+        for overlay in overlays {
+            guard let image = await Self.snapshot(of: overlay.webView) else {
+                logger.error("Web view snapshot failed")
+                continue
+            }
+            context.setAlpha(overlay.alpha)
+            context.draw(image, in: CGRect(x: overlay.frame.minX * scale,
+                                           y: CGFloat(height) - overlay.frame.maxY * scale,
+                                           width: overlay.frame.width * scale,
+                                           height: overlay.frame.height * scale))
+        }
+    }
+
+    private static func visibleWebViews(in view: UIView, alpha: CGFloat) -> [WebViewOverlay] {
+        let alpha = alpha * view.alpha
+        guard !view.isHidden, alpha > 0 else { return [] }
+        if let webView = view as? WKWebView {
+            let frame = webView.convert(webView.bounds, to: nil)
+            return frame.isEmpty ? [] : [WebViewOverlay(webView: webView, alpha: alpha, frame: frame)]
+        }
+        return view.subviews.flatMap { visibleWebViews(in: $0, alpha: alpha) }
+    }
+
+    private static func snapshot(of webView: WKWebView) async -> CGImage? {
+        let configuration = WKSnapshotConfiguration()
+        configuration.afterScreenUpdates = false
+        return await withCheckedContinuation { continuation in
+            var resumed = false
+            let finish = { (image: CGImage?) in
+                guard !resumed else { return }
+                resumed = true
+                continuation.resume(returning: image)
+            }
+            webView.takeSnapshot(with: configuration) { image, _ in finish(image?.cgImage) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { finish(nil) }
         }
     }
 
@@ -387,6 +440,12 @@ private let MAA_TOOLS_VERSION = 4
         try await connection.send(content: header)
         try await connection.send(content: data)
     }
+}
+
+private struct WebViewOverlay {
+    let webView: WKWebView
+    let alpha: CGFloat
+    let frame: CGRect
 }
 
 private struct ByteBufferPool: ~Copyable {
