@@ -15,6 +15,7 @@
 		6E84A14528D0F94E00BF7495 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA818CBA287ABFD5000BEE9D /* UIKit.framework */; };
 		6E84A15028D0F97500BF7495 /* AKInterface.bundle in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 6E84A14C28D0F96D00BF7495 /* AKInterface.bundle */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		83B1FB7129C9AB94003BBBD4 /* MaaTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83B1FB7029C9AB94003BBBD4 /* MaaTools.swift */; };
+		D5F0A11D2260000100000001 /* BackgroundKeepAlive.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5F0A11D2260000200000001 /* BackgroundKeepAlive.swift */; };
 		83FFD5F130474C12007E2037 /* MetalCaptureHook.m in Sources */ = {isa = PBXBuildFile; fileRef = 83FFD5F030474C12007E2037 /* MetalCaptureHook.m */; };
 		83FFD5F230474C12007E2037 /* MetalCaptureHook.h in Headers */ = {isa = PBXBuildFile; fileRef = 83FFD5EF30474C12007E2037 /* MetalCaptureHook.h */; };
 		83FFD5F430474C76007E2037 /* ArknightsMetalCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83FFD5F330474C76007E2037 /* ArknightsMetalCapture.swift */; };
@@ -118,6 +119,7 @@
 		6E7663A428D0FEBE00DE4AF9 /* AKPluginLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AKPluginLoader.swift; sourceTree = "<group>"; };
 		6E84A14C28D0F96D00BF7495 /* AKInterface.bundle */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AKInterface.bundle; sourceTree = BUILT_PRODUCTS_DIR; };
 		83B1FB7029C9AB94003BBBD4 /* MaaTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaaTools.swift; sourceTree = "<group>"; };
+		D5F0A11D2260000200000001 /* BackgroundKeepAlive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundKeepAlive.swift; sourceTree = "<group>"; };
 		83FFD5EF30474C12007E2037 /* MetalCaptureHook.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MetalCaptureHook.h; sourceTree = "<group>"; };
 		83FFD5F030474C12007E2037 /* MetalCaptureHook.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = MetalCaptureHook.m; sourceTree = "<group>"; };
 		83FFD5F330474C76007E2037 /* ArknightsMetalCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArknightsMetalCapture.swift; sourceTree = "<group>"; };
@@ -516,6 +518,7 @@
 				B46C02C82C634C60007637AB /* BatteryLevel.h */,
 				B444BB0B2F49C1D100ADCC5A /* ControllerFocus.m */,
 				D04B12C92EF6F3DD008FEC14 /* MediaVolume.m */,
+				D5F0A11D2260000200000001 /* BackgroundKeepAlive.swift */,
 				D04B12CC2EF6F3F9008FEC14 /* MediaVolume.h */,
 				83B1FB7029C9AB94003BBBD4 /* MaaTools.swift */,
 			);
@@ -788,6 +791,7 @@
 				9562D1752AB52479002C329D /* EditorMouseEventAdapter.swift in Sources */,
 				AA7197AA287A481500623C15 /* Toast.swift in Sources */,
 				83B1FB7129C9AB94003BBBD4 /* MaaTools.swift in Sources */,
+				D5F0A11D2260000100000001 /* BackgroundKeepAlive.swift in Sources */,
 				AA719789287A480D00623C15 /* PlayInput.swift in Sources */,
 				AA71970B287A44D200623C15 /* PlayLoader.m in Sources */,
 				9555ED332C058E36006E469C /* DebugController.swift in Sources */,
