@@ -195,6 +195,9 @@ private let MAA_TOOLS_VERSION = 4
     }
 
     private func screenshot() async -> Data? {
+        if ArknightsMetalCapture.installation == true, let data = await metalScreenshot() {
+            return data
+        }
         guard let image = await AKInterface.shared?.windowImage() else {
             logger.error("Failed to fetch CGImage")
             return nil
@@ -213,6 +216,49 @@ private let MAA_TOOLS_VERSION = 4
         let data = Data(bytesNoCopy: buffer, count: length, deallocator: .free)
 
         return data
+    }
+
+    // Window capture goes stale while the session is off console; Metal frames stay live.
+    private func metalScreenshot() async -> Data? {
+        guard let buffer = await metalPixels() else { return nil }
+        return Data(bytesNoCopy: buffer, count: 4 * width * height,
+                    deallocator: .custom { pointer, _ in pointer.deallocate() })
+    }
+
+    private func metalPixels() async -> UnsafeMutablePointer<UInt8>? {
+        let frame: MetalCapture
+        do {
+            frame = try await ArknightsMetalCapture.shared.capture()
+        } catch {
+            logger.error("Metal screenshot unavailable: \(error.localizedDescription)")
+            return nil
+        }
+
+        return withExtendedLifetime(frame) { () -> UnsafeMutablePointer<UInt8>? in
+            var src = vImage_Buffer(data: frame.buffer.contents(),
+                                    height: UInt(frame.height), width: UInt(frame.width),
+                                    rowBytes: 4 * frame.width)
+            let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 4 * width * height)
+            var dst = vImage_Buffer(data: buffer, height: UInt(height), width: UInt(width),
+                                    rowBytes: 4 * width)
+
+            if frame.width != width || frame.height != height {
+                let scaled = vImageScale_ARGB8888(&src, &dst, nil, vImage_Flags(kvImageHighQualityResampling))
+                guard scaled == kvImageNoError else {
+                    buffer.deallocate()
+                    return nil
+                }
+                src = dst
+            }
+
+            let bgraToRgba: [UInt8] = [2, 1, 0, 3]
+            let permuted = vImagePermuteChannels_ARGB8888(&src, &dst, bgraToRgba, vImage_Flags(kvImageNoFlags))
+            guard permuted == kvImageNoError else {
+                buffer.deallocate()
+                return nil
+            }
+            return buffer
+        }
     }
 
     private func screensize(to connection: NWConnection) async throws {
