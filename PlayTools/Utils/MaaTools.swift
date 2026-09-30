@@ -390,10 +390,7 @@ private let MAA_TOOLS_VERSION = 4
                     complete = false
                     continue
                 }
-                context.saveGState()
-                context.setAlpha(overlay.alpha)
                 snapshot.draw(in: overlay.convert(overlay.bounds, to: window))
-                context.restoreGState()
             }
         }
         guard complete, let cgImage = image.cgImage,
