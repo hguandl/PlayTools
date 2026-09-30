@@ -35,7 +35,7 @@ class BackgroundKeepAlive {
     // the suppressed lifecycle events (resign active, enter background) so the
     // game can save its state — from that point on they must reach the app.
     private enum LifecycleState {
-        case inactive, active, terminating
+        case inactive, active, interrupted, terminating
     }
     private static let lifecycleState = OSAllocatedUnfairLock(initialState: LifecycleState.inactive)
 
@@ -45,8 +45,15 @@ class BackgroundKeepAlive {
 
     private static func setSuppressionActive(_ active: Bool) {
         lifecycleState.withLock { state in
-            guard state != .terminating else { return }
+            guard state != .terminating, state != .interrupted else { return }
             state = active ? .active : .inactive
+        }
+    }
+
+    private static func setInterrupted(_ interrupted: Bool) {
+        lifecycleState.withLock { state in
+            guard state != .terminating else { return }
+            state = interrupted ? .interrupted : .inactive
         }
     }
 
@@ -58,8 +65,8 @@ class BackgroundKeepAlive {
         }
     }
 
-    private static var terminating: Bool {
-        lifecycleState.withLock { $0 == .terminating }
+    private static var canRun: Bool {
+        lifecycleState.withLock { $0 == .inactive || $0 == .active }
     }
 
     private static let suppressedNotifications: Set<String> = [
@@ -197,17 +204,28 @@ class BackgroundKeepAlive {
         }
         NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification,
                                                object: nil,
-                                               queue: .main) { [weak self] _ in
-            self?.ensureRunning()
+                                               queue: .main) { [weak self] notification in
+            guard let rawType = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: rawType) else { return }
+            switch type {
+            case .began:
+                Self.setInterrupted(true)
+            case .ended:
+                Self.setInterrupted(false)
+                self?.ensureRunning()
+            @unknown default:
+                break
+            }
         }
 
         ensureRunning()
     }
 
     private func ensureRunning() {
-        guard !Self.terminating, let silence = silence else { return }
+        guard Self.canRun, let silence = silence else { return }
         Self.setSuppressionActive(false)
         do {
+            try AVAudioSession.sharedInstance().setActive(true)
             if !engine.isRunning {
                 try engine.start()
             }
@@ -218,7 +236,7 @@ class BackgroundKeepAlive {
             Self.setSuppressionActive(engine.isRunning && player.isPlaying)
             Self.log.notice("silent audio running")
         } catch {
-            Self.log.error("engine start failed: \(error, privacy: .public)")
+            Self.log.error("audio playback restart failed: \(error, privacy: .public)")
         }
     }
 }
