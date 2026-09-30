@@ -33,8 +33,38 @@ class BackgroundKeepAlive {
     // Cleared once termination starts: the shutdown sequence replays exactly
     // the suppressed lifecycle events (resign active, enter background) so the
     // game can save its state — from that point on they must reach the app.
-    private static var suppressionActive = true
-    private var terminating = false
+    private enum LifecycleState {
+        case inactive, active, terminating
+    }
+    private static let lifecycleLock = NSLock()
+    private static var lifecycleState = LifecycleState.inactive
+
+    private static var suppressionActive: Bool {
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
+        return lifecycleState == .active
+    }
+
+    private static func setSuppressionActive(_ active: Bool) {
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
+        guard lifecycleState != .terminating else { return }
+        lifecycleState = active ? .active : .inactive
+    }
+
+    private static func beginTermination() -> Bool {
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
+        guard lifecycleState != .terminating else { return false }
+        lifecycleState = .terminating
+        return true
+    }
+
+    private static var terminating: Bool {
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
+        return lifecycleState == .terminating
+    }
 
     private static let suppressedNotifications: Set<String> = [
         UIApplication.willResignActiveNotification.rawValue,
@@ -116,9 +146,7 @@ class BackgroundKeepAlive {
     // so the app can shut down cleanly. Without this, the game never receives
     // its save-and-quit lifecycle events and the process lingers half-dead.
     func prepareForTermination() {
-        guard !terminating else { return }
-        terminating = true
-        Self.suppressionActive = false
+        guard Self.beginTermination() else { return }
         if engine.isRunning {
             player.stop()
             engine.stop()
@@ -144,6 +172,7 @@ class BackgroundKeepAlive {
             try session.setActive(true)
         } catch {
             Self.log.error("audio session setup failed: \(error, privacy: .public)")
+            return
         }
 
         guard let format = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 2),
@@ -180,7 +209,8 @@ class BackgroundKeepAlive {
     }
 
     private func ensureRunning() {
-        guard !terminating, let silence = silence else { return }
+        guard !Self.terminating, let silence = silence else { return }
+        Self.setSuppressionActive(false)
         do {
             if !engine.isRunning {
                 try engine.start()
@@ -189,6 +219,7 @@ class BackgroundKeepAlive {
                 player.scheduleBuffer(silence, at: nil, options: .loops)
                 player.play()
             }
+            Self.setSuppressionActive(engine.isRunning && player.isPlaying)
             Self.log.notice("silent audio running")
         } catch {
             Self.log.error("engine start failed: \(error, privacy: .public)")
