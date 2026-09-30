@@ -10,6 +10,7 @@ import os
 // no longer visible. Like on iOS, an app that is actively playing audio is
 // exempt, so keep an inaudible player running for the whole app lifetime.
 // Requires "UIBackgroundModes: [audio]" in the app's Info.plist.
+@available(iOS 18.0, *)
 class BackgroundKeepAlive {
     static let shared = BackgroundKeepAlive()
     static let log = Logger(subsystem: "io.playcover.PlayTools", category: "BackgroundKeepAlive")
@@ -36,34 +37,29 @@ class BackgroundKeepAlive {
     private enum LifecycleState {
         case inactive, active, terminating
     }
-    private static let lifecycleLock = NSLock()
-    private static var lifecycleState = LifecycleState.inactive
+    private static let lifecycleState = OSAllocatedUnfairLock(initialState: LifecycleState.inactive)
 
     private static var suppressionActive: Bool {
-        lifecycleLock.lock()
-        defer { lifecycleLock.unlock() }
-        return lifecycleState == .active
+        lifecycleState.withLock { $0 == .active }
     }
 
     private static func setSuppressionActive(_ active: Bool) {
-        lifecycleLock.lock()
-        defer { lifecycleLock.unlock() }
-        guard lifecycleState != .terminating else { return }
-        lifecycleState = active ? .active : .inactive
+        lifecycleState.withLock { state in
+            guard state != .terminating else { return }
+            state = active ? .active : .inactive
+        }
     }
 
     private static func beginTermination() -> Bool {
-        lifecycleLock.lock()
-        defer { lifecycleLock.unlock() }
-        guard lifecycleState != .terminating else { return false }
-        lifecycleState = .terminating
-        return true
+        lifecycleState.withLock { state in
+            guard state != .terminating else { return false }
+            state = .terminating
+            return true
+        }
     }
 
     private static var terminating: Bool {
-        lifecycleLock.lock()
-        defer { lifecycleLock.unlock() }
-        return lifecycleState == .terminating
+        lifecycleState.withLock { $0 == .terminating }
     }
 
     private static let suppressedNotifications: Set<String> = [
@@ -98,8 +94,8 @@ class BackgroundKeepAlive {
             typealias PostFn = @convention(c) (NotificationCenter, Selector, NSNotification) -> Void
             let original = unsafeBitCast(originalImp, to: PostFn.self)
             let block: @convention(block) (NotificationCenter, NSNotification) -> Void = { center, notif in
-                if suppressionActive && center === NotificationCenter.default
-                    && suppressedNotifications.contains(notif.name.rawValue) {
+                if center === NotificationCenter.default
+                    && suppressedNotifications.contains(notif.name.rawValue) && suppressionActive {
                     log.debug("suppressed post: \(notif.name.rawValue, privacy: .public)")
                     return
                 }
@@ -112,8 +108,8 @@ class BackgroundKeepAlive {
             let original = unsafeBitCast(originalImp, to: PostNameFn.self)
             let block: @convention(block)
                 (NotificationCenter, NSString, AnyObject?, NSDictionary?) -> Void = { center, name, obj, info in
-                if suppressionActive && center === NotificationCenter.default
-                    && suppressedNotifications.contains(name as String) {
+                if center === NotificationCenter.default
+                    && suppressedNotifications.contains(name as String) && suppressionActive {
                     log.debug("suppressed postName: \(name, privacy: .public)")
                     return
                 }
