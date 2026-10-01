@@ -377,29 +377,20 @@ private let MAA_TOOLS_VERSION = 4
             .filter { !$0.isHidden && $0.alpha > 0 && !$0.bounds.isEmpty }
         guard !overlays.isEmpty else { return true }
         guard overlays.allSatisfy({ !containsMetal($0.layer) && $0.transform.isIdentity }) else { return false }
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        format.opaque = false
-        format.preferredRange = .standard
-        var complete = true
-        let image = UIGraphicsImageRenderer(size: CGSize(width: width, height: height), format: format).image { renderer in
-            let context = renderer.cgContext
-            context.scaleBy(x: CGFloat(width) / window.bounds.width, y: CGFloat(height) / window.bounds.height)
-            for overlay in overlays {
-                guard let snapshot = nativeViewSnapshot(overlay) else {
-                    complete = false
-                    continue
-                }
-                snapshot.draw(in: overlay.convert(overlay.bounds, to: window))
-            }
-        }
-        guard complete, let cgImage = image.cgImage,
-              let context = CGContext(data: pixels, width: width, height: height,
+        guard let context = CGContext(data: pixels, width: width, height: height,
                                       bitsPerComponent: 8, bytesPerRow: width * 4,
                                       space: Self.srgb,
                                       bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
                                         | CGBitmapInfo.byteOrder32Little.rawValue) else { return false }
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        // Draw UIKit snapshots directly into the captured frame, in UIKit coordinates.
+        context.translateBy(x: 0, y: CGFloat(height))
+        context.scaleBy(x: CGFloat(width) / window.bounds.width, y: -CGFloat(height) / window.bounds.height)
+        UIGraphicsPushContext(context)
+        defer { UIGraphicsPopContext() }
+        for overlay in overlays {
+            guard let snapshot = nativeViewSnapshot(overlay) else { return false }
+            snapshot.draw(in: overlay.convert(overlay.bounds, to: window))
+        }
         return true
     }
 }
