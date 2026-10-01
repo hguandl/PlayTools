@@ -352,19 +352,6 @@ private let MAA_TOOLS_VERSION = 4
         layer is CAMetalLayer || (layer.sublayers ?? []).contains { containsMetal($0) }
     }
 
-    private func nativeViewSnapshot(_ view: UIView) -> UIImage? {
-        guard !view.bounds.isEmpty, !containsMetal(view.layer) else { return nil }
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        format.opaque = false
-        format.preferredRange = .standard
-        var complete = false
-        let image = UIGraphicsImageRenderer(bounds: view.bounds, format: format).image { _ in
-            complete = view.drawHierarchy(in: view.bounds, afterScreenUpdates: false)
-        }
-        return complete ? image : nil
-    }
-
     // Arknights presents native overlays as siblings above its full-window Metal branch.
     private func compositeNativeOverlay(into pixels: UnsafeMutableRawPointer, width: Int, height: Int) -> Bool {
         let windows = UIApplication.shared.connectedScenes
@@ -382,14 +369,20 @@ private let MAA_TOOLS_VERSION = 4
                                       space: Self.srgb,
                                       bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
                                         | CGBitmapInfo.byteOrder32Little.rawValue) else { return false }
-        // Draw UIKit snapshots directly into the captured frame, in UIKit coordinates.
+        // Draw native UIKit directly into the captured frame, in UIKit coordinates.
         context.translateBy(x: 0, y: CGFloat(height))
         context.scaleBy(x: CGFloat(width) / window.bounds.width, y: -CGFloat(height) / window.bounds.height)
         UIGraphicsPushContext(context)
         defer { UIGraphicsPopContext() }
         for overlay in overlays {
-            guard let snapshot = nativeViewSnapshot(overlay) else { return false }
-            snapshot.draw(in: overlay.convert(overlay.bounds, to: window))
+            let bounds = overlay.bounds
+            let target = overlay.convert(bounds, to: window)
+            context.saveGState()
+            context.translateBy(x: target.minX - bounds.minX, y: target.minY - bounds.minY)
+            context.clip(to: bounds)
+            let complete = overlay.drawHierarchy(in: bounds, afterScreenUpdates: false)
+            context.restoreGState()
+            guard complete else { return false }
         }
         return true
     }
