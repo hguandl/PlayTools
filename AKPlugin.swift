@@ -7,6 +7,8 @@
 
 import AppKit
 import CoreGraphics
+import CoreMedia
+import CoreVideo
 import Foundation
 import OSLog
 import ScreenCaptureKit
@@ -128,25 +130,116 @@ class AKPlugin: NSObject, Plugin {
                                        [.bestResolution, .boundsIgnoreFraming, .shouldBeOpaque])
     }
 
+    private struct WindowViewport {
+        let contentView: NSView
+        let child: NSView
+        let contentBounds: CGRect
+        let contentFrame: CGRect
+        let childBounds: CGRect
+        let childFrame: CGRect
+        let flipped: Bool
+        let convertedRect: CGRect
+        let imageTopRect: CGRect
+
+        func matches(_ other: WindowViewport) -> Bool {
+            contentView === other.contentView && child === other.child &&
+                contentBounds == other.contentBounds && contentFrame == other.contentFrame &&
+                childBounds == other.childBounds && childFrame == other.childFrame &&
+                flipped == other.flipped && convertedRect == other.convertedRect &&
+                imageTopRect == other.imageTopRect
+        }
+    }
+
+    @MainActor private func windowViewport(_ window: NSWindow, size: CGSize) -> WindowViewport? {
+        func finite(_ rect: CGRect) -> Bool {
+            rect.origin.x.isFinite && rect.origin.y.isFinite && rect.width.isFinite && rect.height.isFinite
+        }
+        guard let contentView = window.contentView,
+              finite(contentView.bounds), finite(contentView.frame),
+              contentView.bounds.size == size, size.width > 0, size.height > 0 else {
+            logger.error("Invalid fullscreen content view geometry")
+            return nil
+        }
+        // Logical visibility remains usable when the window is on another Space.
+        let children = contentView.subviews.filter { !$0.isHidden && $0.alphaValue > 0 }
+        guard children.count == 1, let child = children.first,
+              finite(child.bounds), finite(child.frame) else {
+            logger.error("Fullscreen viewport requires one visible direct child")
+            return nil
+        }
+        let converted = child.convert(child.bounds, to: contentView)
+        guard finite(converted), converted.width > 0, converted.height > 0,
+              contentView.bounds.contains(converted) else {
+            logger.error("Invalid fullscreen child viewport")
+            return nil
+        }
+        let imageTop = CGRect(x: converted.minX - contentView.bounds.minX,
+                              y: contentView.isFlipped ? converted.minY - contentView.bounds.minY :
+                                  contentView.bounds.maxY - converted.maxY,
+                              width: converted.width, height: converted.height)
+        return WindowViewport(contentView: contentView, child: child,
+                              contentBounds: contentView.bounds, contentFrame: contentView.frame,
+                              childBounds: child.bounds, childFrame: child.frame,
+                              flipped: contentView.isFlipped, convertedRect: converted, imageTopRect: imageTop)
+    }
+
+    private static func copyImage(_ pixels: CVPixelBuffer) -> CGImage? {
+        guard !CVPixelBufferIsPlanar(pixels),
+              CVPixelBufferGetPixelFormatType(pixels) == kCVPixelFormatType_32BGRA,
+              CVPixelBufferLockBaseAddress(pixels, .readOnly) == kCVReturnSuccess else { return nil }
+        defer { _ = CVPixelBufferUnlockBaseAddress(pixels, .readOnly) }
+        let width = CVPixelBufferGetWidth(pixels)
+        let height = CVPixelBufferGetHeight(pixels)
+        let rowBytes = CVPixelBufferGetBytesPerRow(pixels)
+        guard width > 0, height > 0, width <= Int.max / 4,
+              rowBytes >= width * 4, height <= Int.max / rowBytes,
+              let base = CVPixelBufferGetBaseAddress(pixels),
+              let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+              let provider = CGDataProvider(data: Data(bytes: base, count: rowBytes * height) as CFData)
+        else { return nil }
+        let bitmap = CGBitmapInfo(rawValue: CGBitmapInfo.byteOrder32Little.rawValue
+            | CGImageAlphaInfo.premultipliedFirst.rawValue)
+        return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                       bytesPerRow: rowBytes, space: colorSpace, bitmapInfo: bitmap,
+                       provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+    }
+
     @available(macOS 14.4, macCatalyst 14.4, *)
-    private func captureImage(_ windowID: CGWindowID, size: CGSize) async throws -> CGImage? {
+    @MainActor private func captureImage(_ windowID: CGWindowID, size: CGSize,
+                                         frameSize: CGSize, viewport: CGRect?) async throws -> CGImage? {
+        guard !Task.isCancelled else { return nil }
         let content = try await SCShareableContent.currentProcess
+        guard !Task.isCancelled else { return nil }
         guard let window = content.windows.first(where: { $0.windowID == windowID }) else {
             logger.error("Cannot find the shareable content of the window")
             return nil
         }
         let filter = SCContentFilter(desktopIndependentWindow: window)
         let info = SCShareableContent.info(for: filter)
-        guard size.height <= info.contentRect.height else {
-            logger.error("Invalid height: inner \(size.height), outer \(info.contentRect.height)")
+        let rect = info.contentRect
+        let scale = CGFloat(info.pointPixelScale)
+        // SCK metadata can retain the previous window size after a resize.
+        guard rect.size == frameSize,
+              size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0,
+              rect.width.isFinite, rect.height.isFinite,
+              size.width <= rect.width, size.height <= rect.height,
+              scale.isFinite, scale > 0 else {
+            logger.error("Invalid geometry: \(size.width)x\(size.height) in \(rect.width)x\(rect.height) @\(scale)")
+            return nil
+        }
+        let fullWidth = ceil(rect.width * scale)
+        let fullHeight = ceil(rect.height * scale)
+        let contentWidth = ceil(size.width * scale)
+        let contentHeight = ceil(size.height * scale)
+        guard fullWidth.isFinite, fullHeight.isFinite, contentWidth.isFinite, contentHeight.isFinite,
+              contentWidth > 0, contentHeight > 0,
+              fullWidth < CGFloat(Int.max), fullHeight < CGFloat(Int.max) else {
+            logger.error("Invalid capture pixel dimensions")
             return nil
         }
         let config = SCStreamConfiguration()
-        let scale = CGFloat(info.pointPixelScale)
-        config.width = max(1, Int(ceil(size.width * scale)))
-        config.height = max(1, Int(ceil(size.height * scale)))
-        config.sourceRect.origin.y += info.contentRect.height - size.height
-        config.sourceRect.size = size
+        config.width = Int(fullWidth)
+        config.height = Int(fullHeight)
         config.pixelFormat = kCVPixelFormatType_32BGRA
         config.colorSpaceName = CGColorSpace.sRGB
         config.showsCursor = false
@@ -154,14 +247,96 @@ class AKPlugin: NSObject, Plugin {
         config.ignoreShadowsSingleWindow = true
         config.ignoreGlobalClipSingleWindow = true
         config.captureResolution = .best
-        return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+        let sample = try await SCScreenshotManager.captureSampleBuffer(contentFilter: filter,
+                                                                     configuration: config)
+        guard !Task.isCancelled else { return nil }
+        guard sample.isValid, CMSampleBufferDataIsReady(sample),
+              let pixels = sample.imageBuffer,
+              CVPixelBufferGetPixelFormatType(pixels) == kCVPixelFormatType_32BGRA else {
+            logger.error("Invalid or unready BGRA screenshot sample")
+            return nil
+        }
+        let image = Self.copyImage(pixels)
+        guard !Task.isCancelled, let image else { return nil }
+        guard image.width == config.width, image.height == config.height else {
+            logger.error("Capture size mismatch: \(image.width)x\(image.height) != \(config.width)x\(config.height)")
+            return nil
+        }
+        return cropWindowImage(image, contentWidth: Int(contentWidth), contentHeight: Int(contentHeight),
+                               scale: scale, viewport: viewport)
     }
 
-    func windowImage() async -> CGImage? {
+    private func cropWindowImage(_ image: CGImage, contentWidth: Int, contentHeight: Int,
+                                 scale: CGFloat, viewport: CGRect?) -> CGImage? {
+        // Crop in image coordinates after whole-window acquisition.
+        let cropRect = CGRect(x: 0, y: image.height - contentHeight,
+                              width: contentWidth, height: contentHeight)
+        let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        guard bounds.contains(cropRect), let cropped = image.cropping(to: cropRect),
+              cropped.width == contentWidth, cropped.height == contentHeight else {
+            logger.error("""
+                Invalid capture crop: x=\(cropRect.minX) y=\(cropRect.minY) \
+                \(cropRect.width)x\(cropRect.height), image \(image.width)x\(image.height)
+                """)
+            return nil
+        }
+        guard let viewport else { return cropped }
+        let minX = floor(viewport.minX * scale)
+        let minY = floor(viewport.minY * scale)
+        let maxX = ceil(viewport.maxX * scale)
+        let maxY = ceil(viewport.maxY * scale)
+        let viewportPixels = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+        let croppedBounds = CGRect(x: 0, y: 0, width: cropped.width, height: cropped.height)
+        guard minX.isFinite, minY.isFinite, maxX.isFinite, maxY.isFinite,
+              viewportPixels.width > 0, viewportPixels.height > 0,
+              croppedBounds.contains(viewportPixels),
+              let viewportImage = cropped.cropping(to: viewportPixels),
+              viewportImage.width == Int(viewportPixels.width),
+              viewportImage.height == Int(viewportPixels.height) else {
+            logger.error("Invalid fullscreen viewport pixel crop")
+            return nil
+        }
+        return viewportImage
+    }
+
+    @MainActor func windowImage() async -> CGImage? {
         if #available(macOS 14.4, macCatalyst 14.4, *), sckAvailable {
             do {
-                guard let windowID else { return nil }
-                return try await captureImage(windowID, size: windowContentRect.size)
+                guard let window = NSApplication.shared.windows.first else { return nil }
+                let windowNumber = window.windowNumber
+                let frameSize = window.frame.size
+                let size = window.contentRect(forFrameRect: window.frame).size
+                let minimized = window.isMiniaturized
+                let fullscreen = window.styleMask.contains(.fullScreen)
+                let activeSpace = window.isOnActiveSpace
+                let viewport: WindowViewport?
+                if !minimized && fullscreen {
+                    guard let current = windowViewport(window, size: size) else { return nil }
+                    viewport = current
+                } else {
+                    viewport = nil
+                }
+                // Keep fullscreen framing consistent across active and inactive Spaces.
+                let image = try await captureImage(CGWindowID(windowNumber), size: size,
+                                                  frameSize: frameSize, viewport: viewport?.imageTopRect)
+                // Endpoint checks cannot detect a transition back to the original state.
+                guard NSApplication.shared.windows.contains(where: { $0 === window }),
+                      window.windowNumber == windowNumber,
+                      window.frame.size == frameSize,
+                      window.contentRect(forFrameRect: window.frame).size == size,
+                      window.isMiniaturized == minimized,
+                      window.styleMask.contains(.fullScreen) == fullscreen,
+                      window.isOnActiveSpace == activeSpace else {
+                    logger.error("Window changed during capture")
+                    return nil
+                }
+                if let viewport {
+                    guard let current = windowViewport(window, size: size), viewport.matches(current) else {
+                        logger.error("Fullscreen viewport changed during capture")
+                        return nil
+                    }
+                }
+                return image
             } catch {
                 logger.error("ScreenCaptureKit current-process capture failed: \(error)")
                 return nil
