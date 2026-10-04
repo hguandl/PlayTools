@@ -121,9 +121,40 @@ final class MetalCaptureBufferPool: @unchecked Sendable {
     }
 }
 
+// A request remains completable after it leaves the frame queue for the GPU.
+// Timeout and GPU completion race here, and only the first result is delivered.
+final class MetalCaptureRequest: @unchecked Sendable {
+    private var continuation: UnsafeContinuation<MetalCapture, any Error>?
+    private let lock = os_unfair_lock_t.allocate(capacity: 1)
+
+    init(continuation: UnsafeContinuation<MetalCapture, any Error>) {
+        self.continuation = continuation
+        lock.initialize(to: .init())
+    }
+
+    deinit {
+        lock.deinitialize(count: 1)
+        lock.deallocate()
+    }
+
+    var isPending: Bool {
+        os_unfair_lock_lock(lock)
+        defer { os_unfair_lock_unlock(lock) }
+        return continuation != nil
+    }
+
+    func finish(with result: Result<MetalCapture, any Error>) {
+        os_unfair_lock_lock(lock)
+        let continuation = self.continuation
+        self.continuation = nil
+        os_unfair_lock_unlock(lock)
+        continuation?.resume(with: result)
+    }
+}
+
 final class MetalCaptureState: @unchecked Sendable {
     private var commandQueue: MTLCommandQueue?
-    private var continuation: UnsafeContinuation<MetalCapture, any Error>?
+    private var request: MetalCaptureRequest?
 
     private let lock = os_unfair_lock_t.allocate(capacity: 1)
 
@@ -145,15 +176,15 @@ final class MetalCaptureState: @unchecked Sendable {
         os_unfair_lock_unlock(lock)
     }
 
-    func register(continuation: UnsafeContinuation<MetalCapture, any Error>) {
+    func register(request: MetalCaptureRequest) {
         os_unfair_lock_lock(lock)
-        let oldContinuation = self.continuation
-        self.continuation = continuation
+        let oldRequest = self.request
+        self.request = request
         os_unfair_lock_unlock(lock)
-        oldContinuation?.resume(throwing: MetalCaptureError.outdated)
+        oldRequest?.finish(with: .failure(MetalCaptureError.outdated))
     }
 
-    func take() -> (MTLCommandQueue, UnsafeContinuation<MetalCapture, any Error>)? {
+    func take() -> (MTLCommandQueue, MetalCaptureRequest)? {
         guard os_unfair_lock_trylock(lock) else {
             return nil
         }
@@ -161,12 +192,12 @@ final class MetalCaptureState: @unchecked Sendable {
             os_unfair_lock_unlock(lock)
             return nil
         }
-        guard let continuation else {
+        guard let request else {
             os_unfair_lock_unlock(lock)
             return nil
         }
-        self.continuation = nil
+        self.request = nil
         os_unfair_lock_unlock(lock)
-        return (commandQueue, continuation)
+        return request.isPending ? (commandQueue, request) : nil
     }
 }
