@@ -207,9 +207,7 @@ class AKPlugin: NSObject, Plugin {
     @available(macOS 14.4, macCatalyst 14.4, *)
     @MainActor private func captureImage(_ windowID: CGWindowID, size: CGSize,
                                          frameSize: CGSize, viewport: CGRect?) async throws -> CGImage? {
-        guard !Task.isCancelled else { return nil }
         let content = try await SCShareableContent.currentProcess
-        guard !Task.isCancelled else { return nil }
         guard let window = content.windows.first(where: { $0.windowID == windowID }) else {
             logger.error("Cannot find the shareable content of the window")
             return nil
@@ -249,15 +247,15 @@ class AKPlugin: NSObject, Plugin {
         config.captureResolution = .best
         let sample = try await SCScreenshotManager.captureSampleBuffer(contentFilter: filter,
                                                                      configuration: config)
-        guard !Task.isCancelled else { return nil }
         guard sample.isValid, CMSampleBufferDataIsReady(sample),
-              let pixels = sample.imageBuffer,
-              CVPixelBufferGetPixelFormatType(pixels) == kCVPixelFormatType_32BGRA else {
-            logger.error("Invalid or unready BGRA screenshot sample")
+              let pixels = sample.imageBuffer else {
+            logger.error("Invalid or unready screenshot sample")
             return nil
         }
-        let image = Self.copyImage(pixels)
-        guard !Task.isCancelled, let image else { return nil }
+        guard let image = Self.copyImage(pixels) else {
+            logger.error("Cannot copy BGRA screenshot pixels")
+            return nil
+        }
         guard image.width == config.width, image.height == config.height else {
             logger.error("Capture size mismatch: \(image.width)x\(image.height) != \(config.width)x\(config.height)")
             return nil
