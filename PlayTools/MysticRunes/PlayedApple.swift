@@ -12,6 +12,27 @@ import Security
 // World's Most Advanced Keychain Replacement Solution:tm:
 // This is a joke, don't take it seriously
 
+// kSecMatchLimitAll and a CFNumber limit greater than 1 both make SecItemCopyMatching
+// return a CFArray (e.g. FirebaseAuth queries with a limit of 2). Returns nil for single-item queries.
+private func multiMatchLimit(_ limit: Any?) -> Int? {
+    if limit as? String == kSecMatchLimitAll as String {
+        return Int.max
+    }
+    if let number = limit as? NSNumber, number.intValue > 1 {
+        return number.intValue
+    }
+    return nil
+}
+
+// Attribute dictionaries returned for a multi-item query; v_Data is kept only when r_Data is requested.
+private func multiMatchItems(_ dicts: [NSMutableDictionary], limit: Int, wantsData: Bool) -> [NSMutableDictionary] {
+    let removedKeys = (wantsData ? [] : [kSecValueData]) + [kSecValueRef, kSecValuePersistentRef]
+    return dicts.prefix(limit).map { dict in
+        removedKeys.forEach { dict.removeObject(forKey: $0) }
+        return dict
+    }
+}
+
 public class PlayKeychain: NSObject {
     static let shared = PlayKeychain()
     private static let playChainDB = PlayKeychainDB.shared
@@ -121,13 +142,9 @@ public class PlayKeychain: NSObject {
             return errSecItemNotFound
         }
 
-        if query[kSecMatchLimit as String] as? String ==  kSecMatchLimitAll as String {
-            result?.pointee = Unmanaged.passRetained(keychainDicts.map({
-                $0.removeObject(forKey: kSecValueData)
-                $0.removeObject(forKey: kSecValueRef)
-                $0.removeObject(forKey: kSecValuePersistentRef)
-                return $0
-            }) as CFTypeRef)
+        if let limit = multiMatchLimit(query[kSecMatchLimit as String]) {
+            let items = multiMatchItems(keychainDicts, limit: limit, wantsData: query["r_Data"] as? Int == 1)
+            result?.pointee = Unmanaged.passRetained(items as CFTypeRef)
             return errSecSuccess
         }
         // Check the `r_Attributes` key. If it is set to 1 in the query
