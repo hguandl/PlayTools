@@ -9,6 +9,8 @@ final class ArknightsMetalCapture {
         "com.hypergryph.arknights"
     ]
 
+    private static let captureTimeout: TimeInterval = 5
+
     private let state = MetalCaptureState()
     private let buffers = MetalCaptureBufferPool(capacity: 3)
 
@@ -23,7 +25,11 @@ final class ArknightsMetalCapture {
         case true: break
         }
         return try await withUnsafeThrowingContinuation { continuation in
-            state.register(continuation: continuation)
+            let request = MetalCaptureRequest(continuation: continuation)
+            state.register(request: request)
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + Self.captureTimeout) {
+                request.finish(with: .failure(MetalCaptureError.unavailable))
+            }
         }
     }
 
@@ -74,12 +80,16 @@ final class ArknightsMetalCapture {
               texture.sampleCount == 1,
               !drawable.layer.framebufferOnly else { return }
 
-        guard let (commandQueue, continuation) = state.take() else {
+        guard let (commandQueue, request) = state.take() else {
             return
         }
 
         let width = texture.width
         let height = texture.height
+        guard width > 0, height > 0 else {
+            request.finish(with: .failure(MetalCaptureError.unavailable))
+            return
+        }
         let bytesPerRow = width * 4
         let length = bytesPerRow * height
 
@@ -87,7 +97,7 @@ final class ArknightsMetalCapture {
               let commandBuffer = commandQueue.makeCommandBuffer(),
               let encoder = commandBuffer.makeBlitCommandEncoder()
         else {
-            continuation.resume(throwing: MetalCaptureError.unavailable)
+            request.finish(with: .failure(MetalCaptureError.unavailable))
             return
         }
 
@@ -106,15 +116,16 @@ final class ArknightsMetalCapture {
 
         commandBuffer.addCompletedHandler { commandBuffer in
             if let error = commandBuffer.error {
-                continuation.resume(throwing: error)
+                request.finish(with: .failure(error))
                 return
             }
 
             guard commandBuffer.status == .completed else {
-                fatalError("Metal blit incomplete without any error")
+                request.finish(with: .failure(MetalCaptureError.unavailable))
+                return
             }
 
-            continuation.resume(returning: .init(width: width, height: height, buffer: buffer))
+            request.finish(with: .success(.init(width: width, height: height, buffer: buffer)))
         }
         commandBuffer.commit()
     }
