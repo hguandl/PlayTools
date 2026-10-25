@@ -323,6 +323,12 @@ private let MAA_TOOLS_VERSION = 4
             return
         }
 
+        guard compositeNativeOverlay(into: frame.buffer.contents(), width: frame.width, height: frame.height) else {
+            logger.error("Native overlay composition failed")
+            try await connection.send(content: 0.u32Bytes + 0.u32Bytes + 0.u32Bytes)
+            return
+        }
+
         var src = vImage_Buffer(data: frame.buffer.contents(),
                                 height: UInt(frame.height), width: UInt(frame.width),
                                 rowBytes: 4 * frame.width)
@@ -340,6 +346,45 @@ private let MAA_TOOLS_VERSION = 4
 
         try await connection.send(content: header)
         try await connection.send(content: data)
+    }
+
+    private func containsMetal(_ layer: CALayer) -> Bool {
+        layer is CAMetalLayer || (layer.sublayers ?? []).contains { containsMetal($0) }
+    }
+
+    // Arknights presents native overlays as siblings above its full-window Metal branch.
+    private func compositeNativeOverlay(into pixels: UnsafeMutableRawPointer, width: Int, height: Int) -> Bool {
+        let windows = UIApplication.shared.connectedScenes
+            .flatMap { ($0 as? UIWindowScene)?.windows ?? [] }
+            .filter { containsMetal($0.layer) }
+        guard windows.count == 1, let window = windows.first,
+              let branch = window.subviews.firstIndex(where: { containsMetal($0.layer) }),
+              window.bounds.width > 0, window.bounds.height > 0 else { return false }
+        let overlays = window.subviews.dropFirst(branch + 1)
+            .filter { !$0.isHidden && $0.alpha > 0 && !$0.bounds.isEmpty }
+        guard !overlays.isEmpty else { return true }
+        guard overlays.allSatisfy({ !containsMetal($0.layer) && $0.transform.isIdentity }) else { return false }
+        guard let context = CGContext(data: pixels, width: width, height: height,
+                                      bitsPerComponent: 8, bytesPerRow: width * 4,
+                                      space: Self.srgb,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+                                        | CGBitmapInfo.byteOrder32Little.rawValue) else { return false }
+        // Draw native UIKit directly into the captured frame, in UIKit coordinates.
+        context.translateBy(x: 0, y: CGFloat(height))
+        context.scaleBy(x: CGFloat(width) / window.bounds.width, y: -CGFloat(height) / window.bounds.height)
+        UIGraphicsPushContext(context)
+        defer { UIGraphicsPopContext() }
+        for overlay in overlays {
+            let bounds = overlay.bounds
+            let target = overlay.convert(bounds, to: window)
+            context.saveGState()
+            context.translateBy(x: target.minX - bounds.minX, y: target.minY - bounds.minY)
+            context.clip(to: bounds)
+            let complete = overlay.drawHierarchy(in: bounds, afterScreenUpdates: false)
+            context.restoreGState()
+            guard complete else { return false }
+        }
+        return true
     }
 }
 
