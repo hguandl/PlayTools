@@ -175,10 +175,8 @@ class AKPlugin: NSObject, Plugin {
         }
         let config = SCStreamConfiguration()
         let scale = CGFloat(info.pointPixelScale)
-        config.width = max(1, Int(ceil(size.width * scale)))
-        config.height = max(1, Int(ceil(size.height * scale)))
-        config.sourceRect.origin.y += info.contentRect.height - size.height
-        config.sourceRect.size = size
+        config.width = max(1, Int(ceil(info.contentRect.width * scale)))
+        config.height = max(1, Int(ceil(info.contentRect.height * scale)))
         config.pixelFormat = kCVPixelFormatType_32BGRA
         config.colorSpaceName = CGColorSpace.sRGB
         config.showsCursor = false
@@ -186,7 +184,16 @@ class AKPlugin: NSObject, Plugin {
         config.ignoreShadowsSingleWindow = true
         config.ignoreGlobalClipSingleWindow = true
         config.captureResolution = .best
-        return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+        let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+        // sourceRect uses display coordinates; crop window-local content in image pixels instead.
+        let cropRect = CGRect(x: 0, y: CGFloat(image.height) - ceil(size.height * scale),
+                              width: ceil(size.width * scale), height: ceil(size.height * scale))
+        let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        guard bounds.contains(cropRect) else {
+            logger.error("Content crop is outside the captured window")
+            return nil
+        }
+        return image.cropping(to: cropRect)
     }
 
     func windowImage() async -> CGImage? {
