@@ -65,58 +65,6 @@ class PlayKeychainDB: NSObject {
         return dictArr
     }
 
-    func insert(_ attributes: NSDictionary) -> NSMutableDictionary? {
-        guard let tableName = attributes[kSecClass] as? String,
-              let primaryColumns = PlayedAppleDBConstants.primaries[tableName as CFString],
-              let secondaryColumns = PlayedAppleDBConstants.attributes[tableName as CFString] else {
-            return nil
-        }
-
-        var columnsQuery = primaryColumns.map({ "\($0)" })
-        columnsQuery.append(contentsOf: secondaryColumns.compactMap({
-            attributes[$0] != nil ? "\($0)" : nil
-        }))
-        columnsQuery.append(contentsOf: PlayedAppleDBConstants.values.compactMap({
-            attributes[$0] != nil ? "\($0)" : nil
-        }))
-
-        let insertValues = columnsQuery.map({ attributes[$0] as CFTypeRef })
-
-        let insertColumns = columnsQuery.joined(separator: ", ")
-        let insertPlaceholders = Array(repeating: "?", count: insertValues.count).joined(separator: ", ")
-
-        let insertQuery = "INSERT INTO \(tableName) (\(insertColumns)) VALUES (\(insertPlaceholders))"
-        var stmt: OpaquePointer?
-
-        let newDict: NSMutableDictionary = [:]
-        newDict[kSecClassKey] = tableName
-        for column in columnsQuery {
-            newDict[column] = attributes[column]
-        }
-
-        guard usingDB({ sqlite3DB in
-            defer { sqlite3_finalize(stmt) }
-            guard sqlite3_prepare(sqlite3DB, insertQuery, -1, &stmt, nil) == SQLITE_OK,
-                  let stmt = stmt else {
-                let errorMessage = String(cString: sqlite3_errmsg(sqlite3DB))
-                PlayKeychain.debugLogger("Failed query \(insertQuery)")
-                PlayKeychain.debugLogger("Failed to make query: \(errorMessage)")
-                return false
-            }
-
-            for (index, value) in insertValues.enumerated()
-            where !encodeData(stmt: stmt, index: Int32(index + 1), value: value) {
-                let erorrMessage = String(cString: sqlite3_errmsg(sqlite3DB))
-                PlayKeychain.debugLogger("Failed to insert into db: \(erorrMessage)")
-                return false
-            }
-
-            return sqlite3_step(stmt) == SQLITE_DONE
-        }) else { return nil }
-
-        return newDict
-    }
-
     func update(_ attributes: NSDictionary) -> Bool {
         guard let tableName = attributes[kSecClass] as? String,
               let primaryColumns = PlayedAppleDBConstants.primaries[tableName as CFString],
@@ -198,7 +146,8 @@ class PlayKeychainDB: NSObject {
                 return false
             }
 
-            return sqlite3_step(stmt) == SQLITE_OK
+            // DELETE completes with SQLITE_DONE; SQLITE_OK is never returned by sqlite3_step.
+            return sqlite3_step(stmt) == SQLITE_DONE
         }) else { return false }
 
         return true
@@ -303,6 +252,117 @@ class PlayKeychainDB: NSObject {
         default:
             PlayKeychain.debugLogger("Cannot decode this data \(sqlite3_column_type(stmt, index))")
             return nil
+        }
+    }
+}
+
+// MARK: - Insert
+
+extension PlayKeychainDB {
+    func insert(_ attributes: NSDictionary) -> NSMutableDictionary? {
+        if case .inserted(let dict) = insertRow(attributes, requireUnique: false) {
+            return dict
+        }
+        return nil
+    }
+
+    private func insertRow(_ attributes: NSDictionary, requireUnique: Bool) -> InsertOutcome {
+        guard let tableName = attributes[kSecClass] as? String,
+              let primaryColumns = PlayedAppleDBConstants.primaries[tableName as CFString],
+              let secondaryColumns = PlayedAppleDBConstants.attributes[tableName as CFString] else {
+            return .failed
+        }
+
+        var columnsQuery = primaryColumns.map({ "\($0)" })
+        columnsQuery.append(contentsOf: secondaryColumns.compactMap({
+            attributes[$0] != nil ? "\($0)" : nil
+        }))
+        columnsQuery.append(contentsOf: PlayedAppleDBConstants.values.compactMap({
+            attributes[$0] != nil ? "\($0)" : nil
+        }))
+
+        let insertValues = columnsQuery.map({ attributes[$0] as CFTypeRef })
+
+        let insertColumns = columnsQuery.joined(separator: ", ")
+        let insertPlaceholders = Array(repeating: "?", count: insertValues.count).joined(separator: ", ")
+
+        let insertQuery = "INSERT INTO \(tableName) (\(insertColumns)) VALUES (\(insertPlaceholders))"
+        var stmt: OpaquePointer?
+
+        let newDict: NSMutableDictionary = [:]
+        newDict[kSecClassKey] = tableName
+        for column in columnsQuery {
+            newDict[column] = attributes[column]
+        }
+
+        var isDuplicate = false
+        guard usingDB({ sqlite3DB in
+            defer { sqlite3_finalize(stmt) }
+            if requireUnique {
+                // nil means the lookup itself failed: report a failure, not a duplicate
+                let exists = primaryKeyExists(sqlite3DB, tableName: tableName,
+                                              primaryColumns: primaryColumns, attributes: attributes)
+                isDuplicate = exists == true
+                if exists != false { return false }
+            }
+            guard sqlite3_prepare(sqlite3DB, insertQuery, -1, &stmt, nil) == SQLITE_OK,
+                  let stmt = stmt else {
+                let errorMessage = String(cString: sqlite3_errmsg(sqlite3DB))
+                PlayKeychain.debugLogger("Failed query \(insertQuery)")
+                PlayKeychain.debugLogger("Failed to make query: \(errorMessage)")
+                return false
+            }
+
+            for (index, value) in insertValues.enumerated()
+            where !encodeData(stmt: stmt, index: Int32(index + 1), value: value) {
+                let erorrMessage = String(cString: sqlite3_errmsg(sqlite3DB))
+                PlayKeychain.debugLogger("Failed to insert into db: \(erorrMessage)")
+                return false
+            }
+
+            return sqlite3_step(stmt) == SQLITE_DONE
+        }) else { return isDuplicate ? .duplicate : .failed }
+
+        return .inserted(newDict)
+    }
+
+    enum InsertOutcome {
+        case inserted(NSMutableDictionary)
+        case duplicate
+        case failed
+    }
+
+    // SecItemAdd semantics: an item whose primary key (access group, account, service, ...)
+    // already exists must be rejected with errSecDuplicateItem. SQLite does not enforce the
+    // composite PRIMARY KEY when a column is NULL (e.g. no access group), so check explicitly
+    // inside the same connection that performs the insert.
+    func insertUnique(_ attributes: NSDictionary) -> InsertOutcome {
+        insertRow(attributes, requireUnique: true)
+    }
+
+    // Byte-wise comparison of every primary column; an absent attribute matches only NULL.
+    private func primaryKeyExists(_ sqlite3DB: OpaquePointer, tableName: String,
+                                  primaryColumns: [CFString], attributes: NSDictionary) -> Bool? {
+        let whereClause = primaryColumns.map({
+            attributes[$0] == nil ? "\($0) IS NULL" : "CAST(\($0) AS BLOB) IS CAST(? AS BLOB)"
+        }).joined(separator: " AND ")
+        let boundValues = primaryColumns.compactMap({ attributes[$0].map { $0 as CFTypeRef } })
+        let existsQuery = "SELECT 1 FROM \(tableName) WHERE \(whereClause) LIMIT 1"
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare(sqlite3DB, existsQuery, -1, &stmt, nil) == SQLITE_OK,
+              let stmt = stmt else {
+            PlayKeychain.debugLogger("Failed query \(existsQuery)")
+            return nil
+        }
+        for (index, value) in boundValues.enumerated()
+        where !encodeData(stmt: stmt, index: Int32(index + 1), value: value) {
+            return nil
+        }
+        switch sqlite3_step(stmt) {
+        case SQLITE_ROW: return true
+        case SQLITE_DONE: return false
+        default: return nil
         }
     }
 }
